@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
-import { mockDb, DatabaseState } from '../repositories/MockDatabase';
+import { repository } from '../repositories';
+import { DatabaseState } from '../repositories/IRepository';
 
 export const useAppStore = (): DatabaseState => {
   return useSyncExternalStore(
-    mockDb.subscribe,
-    mockDb.getState
+    repository.subscribe,
+    repository.getState
   );
 };

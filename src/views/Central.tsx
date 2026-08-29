@@ -20,32 +20,74 @@ export const Central = () => {
 
   const [orderItem, setOrderItem] = useState({ productId: '', quantity: 1, observation: '' });
 
-  const handleSendDraft = () => {
-    if (selectedConvId && draftMessage) {
-      sendDraftMessage(selectedConvId);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleSendDraft = async () => {
+    if (selectedConvId && draftMessage && !isProcessing) {
+      setIsProcessing(true);
+      setActionError(null);
+      try {
+        await sendDraftMessage(selectedConvId);
+      } catch (err) {
+        setActionError('Erro ao enviar mensagem.');
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
-  const handleSimulateResponse = () => {
-    if (selectedConvId) {
-      simulateClientResponse(selectedConvId);
+  const handleSimulateResponse = async () => {
+    if (selectedConvId && !isProcessing) {
+      setIsProcessing(true);
+      setActionError(null);
+      try {
+        await simulateClientResponse(selectedConvId);
+      } catch (err) {
+        setActionError('Erro ao simular resposta.');
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
-  const handleCreateOrder = () => {
-    if (selectedContact && orderItem.productId) {
+  const handleCreateOrder = async () => {
+    if (selectedContact && orderItem.productId && !isProcessing) {
+      setIsProcessing(true);
+      setActionError(null);
       const product = products.find(p => p.id === orderItem.productId);
       if (product) {
-        createOrder(selectedContact.id, {
-          productId: product.id,
-          productName: product.name,
-          price: product.price,
-          quantity: orderItem.quantity,
-          observation: orderItem.observation
-        }, 'PIX');
-        setOrderModalOpen(false);
-        setOrderItem({ productId: '', quantity: 1, observation: '' });
+        try {
+          await createOrder(selectedContact.id, [{
+            productId: product.id,
+            productName: product.name,
+            price: product.price,
+            quantity: orderItem.quantity,
+            observation: orderItem.observation
+          }], 'PIX');
+          setOrderModalOpen(false);
+          setOrderItem({ productId: '', quantity: 1, observation: '' });
+        } catch (err) {
+          setActionError('Erro ao criar pedido.');
+        } finally {
+          setIsProcessing(false);
+        }
+      } else {
+        setIsProcessing(false);
       }
+    }
+  };
+
+  const handleStageChange = async (contactId: string, stage: FunnelStage) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await changeOpportunityStage(contactId, stage);
+    } catch (err) {
+      setActionError('Erro ao alterar estágio.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -110,10 +152,11 @@ export const Central = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                <button onClick={handleSimulateResponse} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition-colors">
+                {actionError && <span className="text-xs text-red-500 mr-2">{actionError}</span>}
+                <button onClick={handleSimulateResponse} disabled={isProcessing} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50">
                   Simular Resposta
                 </button>
-                <button onClick={() => setOrderModalOpen(true)} className="px-3 py-1.5 bg-emerald-600 border border-emerald-700 rounded text-sm font-medium text-white hover:bg-emerald-700 shadow-sm flex items-center transition-colors">
+                <button onClick={() => setOrderModalOpen(true)} disabled={isProcessing} className="px-3 py-1.5 bg-emerald-600 border border-emerald-700 rounded text-sm font-medium text-white hover:bg-emerald-700 shadow-sm flex items-center transition-colors disabled:opacity-50">
                   <ShoppingBag className="w-4 h-4 mr-1.5" />
                   Gerar Pedido
                 </button>
@@ -157,7 +200,7 @@ export const Central = () => {
                   />
                   <button 
                     className="p-3 m-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                    disabled={!draftMessage}
+                    disabled={!draftMessage || isProcessing}
                     onClick={handleSendDraft}
                   >
                     <Send className="w-5 h-5" />
@@ -192,8 +235,9 @@ export const Central = () => {
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Funil Comercial</div>
             <select 
               value={opp?.stage || 'RASCUNHO'} 
-              onChange={(e) => changeOpportunityStage(selectedContact.id, e.target.value as FunnelStage)}
-              className="w-full p-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500"
+              onChange={(e) => handleStageChange(selectedContact.id, e.target.value as FunnelStage)}
+              disabled={isProcessing}
+              className="w-full p-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"
             >
               <option value="RASCUNHO">Rascunho</option>
               <option value="LEAD">Lead</option>
@@ -298,7 +342,7 @@ export const Central = () => {
               </button>
               <button 
                 onClick={handleCreateOrder} 
-                disabled={!orderItem.productId}
+                disabled={!orderItem.productId || isProcessing}
                 className="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
               >
                 Confirmar Pedido

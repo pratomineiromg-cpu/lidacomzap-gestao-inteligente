@@ -47,7 +47,7 @@ export const Pedidos = () => {
                   </td>
                   <td className="p-4">
                     <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded">
-                      {order.source}
+                      {order.channel}
                     </span>
                   </td>
                   <td className="p-4 font-bold text-slate-900">

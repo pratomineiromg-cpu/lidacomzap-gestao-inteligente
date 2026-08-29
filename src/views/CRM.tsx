@@ -12,12 +12,37 @@ const STAGES: FunnelStage[] = [
 
 export const CRM = () => {
   const { opportunities, contacts } = useAppStore();
+  const [isProcessing, setIsProcessing] = React.useState(false);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+
+  const handleStageChange = async (contactId: string, newStage: FunnelStage) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await changeOpportunityStage(contactId, newStage);
+    } catch (e) {
+      console.error(e);
+      setActionError('Erro ao alterar o estágio da oportunidade.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
       <div className="p-6 border-b border-slate-200 bg-white flex-shrink-0">
-        <h2 className="text-2xl font-bold text-slate-900">CRM / Funil de Vendas</h2>
-        <p className="text-sm text-slate-500 mt-1">Acompanhe as oportunidades comerciais ativas.</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">CRM / Funil de Vendas</h2>
+            <p className="text-sm text-slate-500 mt-1">Acompanhe as oportunidades comerciais ativas.</p>
+          </div>
+          {actionError && (
+            <div className="text-sm text-red-500 font-medium px-3 py-1.5 bg-red-50 rounded-md border border-red-100">
+              {actionError}
+            </div>
+          )}
+        </div>
       </div>
       
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 custom-scrollbar">
@@ -51,9 +76,10 @@ export const CRM = () => {
                         </div>
 
                         <select 
-                          className="w-full text-xs p-1.5 border border-slate-200 rounded text-slate-600 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-500"
+                          className="w-full text-xs p-1.5 border border-slate-200 rounded text-slate-600 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
                           value={opp.stage}
-                          onChange={(e) => changeOpportunityStage(contact.id, e.target.value as FunnelStage)}
+                          onChange={(e) => handleStageChange(contact.id, e.target.value as FunnelStage)}
+                          disabled={isProcessing}
                         >
                           {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>

@@ -103,19 +103,46 @@ export interface DispatchQueueEntry {
   repliedAt?: Date;
 }
 
-export type OrderSource = 'WHATSAPP' | 'APP' | 'WEB';
+export type OrderEntryPoint = 'DIGITAL_MENU' | 'CHAT' | 'POS' | 'TABLE_QR';
+export type CommunicationChannel = 'WHATSAPP' | 'RCS' | 'NONE';
+export type OrderCreationMode = 'CUSTOMER' | 'HUMAN_OPERATOR' | 'AI_ASSISTED' | 'AUTOMATION';
+
 export type OrderStatus = 'CREATED' | 'PAID' | 'CANCELED';
 
 export interface Order {
   id: ID;
   tenantId: ID;
   contactId: ID;
-  source: OrderSource;
+  entryPoint: OrderEntryPoint;
+  channel: CommunicationChannel;
+  creationMode: OrderCreationMode;
   total: number;
   status: OrderStatus;
   paymentMethod: string;
   createdAt: Date;
   updatedAt: Date;
+  
+  conversationId?: ID;
+  dispatchCampaignId?: ID;
+  queueEntryId?: ID;
+}
+
+export interface CustomerProfile {
+  id: ID;
+  contactId: ID;
+  fullName: string;
+  phone: string;
+  email?: string;
+}
+
+export interface CustomerAddress {
+  id: ID;
+  contactId: ID;
+  street: string;
+  number: string;
+  neighborhood: string;
+  complement?: string;
+  postalCode: string;
 }
 
 export interface OrderItem {

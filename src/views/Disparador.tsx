@@ -6,6 +6,8 @@ export const Disparador = () => {
   const { campaigns, dispatchQueue, contacts } = useAppStore();
   const [editingLimit, setEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   
   // Use first campaign for demo
   const campaign = campaigns[0];
@@ -16,17 +18,56 @@ export const Disparador = () => {
   const repliedCount = queueItems.filter(q => q.status === 'REPLIED').length;
 
   const handleEditLimit = () => {
+    if (isProcessing) return;
     setTempLimit(campaign.dailyLimit);
     setEditingLimit(true);
   };
 
-  const handleSaveLimit = () => {
+  const handleSaveLimit = async () => {
+    if (isProcessing) return;
     let limit = Math.floor(tempLimit);
     if (isNaN(limit) || limit < 1) {
       limit = 1;
     }
-    updateCampaignDailyLimit(campaign.id, limit);
-    setEditingLimit(false);
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await updateCampaignDailyLimit(campaign.id, limit);
+      setEditingLimit(false);
+    } catch (e) {
+      console.error(e);
+      setActionError('Erro ao atualizar o limite diário.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePrepareQueue = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await prepareCampaignQueue(campaign.id);
+    } catch (e) {
+      console.error(e);
+      setActionError('Erro ao popular a fila de contatos.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleProcessDrafts = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await processQueueDrafts(campaign.id);
+    } catch (e) {
+      console.error(e);
+      setActionError('Erro ao preparar os rascunhos.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -37,6 +78,12 @@ export const Disparador = () => {
           <p className="text-sm text-slate-500 mt-1">Transforme sua base de contatos em vendas ativas.</p>
         </div>
       </div>
+
+      {actionError && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium">
+          {actionError}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
@@ -83,14 +130,15 @@ export const Disparador = () => {
           
           <div className="flex space-x-4 border-t border-slate-100 pt-6">
             <button 
-              onClick={() => prepareCampaignQueue(campaign.id)}
-              className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 shadow-sm transition-colors"
+              onClick={handlePrepareQueue}
+              disabled={isProcessing}
+              className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
             >
               Popular Fila de Contatos
             </button>
             <button 
-              onClick={() => processQueueDrafts(campaign.id)}
-              disabled={queuedCount === 0}
+              onClick={handleProcessDrafts}
+              disabled={queuedCount === 0 || isProcessing}
               className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-sm transition-colors"
             >
               Preparar Rascunhos ({queuedCount})
