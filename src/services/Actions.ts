@@ -127,9 +127,13 @@ export const simulateClientResponse = async (conversationId: string, content: st
     .filter(q => q.contactId === conversation.contactId && q.status === 'SENT')
     .sort((a, b) => (b.sentAt?.getTime() || 0) - (a.sentAt?.getTime() || 0));
     
-  const queueEntryIdToReply = contactSentEntries.length > 0 ? contactSentEntries[0].id : undefined;
+  const queueEntryToReply = contactSentEntries.length > 0 ? {
+    id: contactSentEntries[0].id,
+    campaignId: contactSentEntries[0].campaignId,
+    contactId: contactSentEntries[0].contactId
+  } : undefined;
 
-  await repository.processClientResponse(newMessage, conversation.id, now, queueEntryIdToReply, now);
+  await repository.processClientResponse(newMessage, conversation.id, now, queueEntryToReply, now);
   await emitEvent({ type: 'MESSAGE_RECEIVED', message: newMessage, contactId: conversation.contactId });
 };
 

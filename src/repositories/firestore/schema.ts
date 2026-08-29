@@ -1,0 +1,31 @@
+// Collection names
+export const COLLECTIONS = {
+  CONTACTS: 'contacts',
+  CONVERSATIONS: 'conversations',
+  MESSAGES: 'messages',
+  OPPORTUNITIES: 'opportunities',
+  DISPATCH_CAMPAIGNS: 'dispatchCampaigns',
+  DISPATCH_QUEUE: 'dispatchQueue',
+  PENDING_OUTBOUND_MESSAGES: 'pendingOutboundMessages',
+  ORDERS: 'orders',
+  ORDER_ITEMS: 'orderItems',
+  TIMELINE_EVENTS: 'timelineEvents',
+  CUSTOMER_PROFILES: 'customerProfiles',
+  CUSTOMER_ADDRESSES: 'customerAddresses'
+} as const;
+
+// Path generators
+export const getOpportunityPath = (contactId: string) => `${COLLECTIONS.OPPORTUNITIES}/${contactId}`;
+export const getCustomerProfilePath = (contactId: string) => `${COLLECTIONS.CUSTOMER_PROFILES}/${contactId}`;
+
+export const dispatchQueueDocumentId = (campaignId: string, contactId: string) => {
+  return `${encodeURIComponent(campaignId)}::${encodeURIComponent(contactId)}`;
+};
+
+export const getDispatchQueuePath = (campaignId: string, contactId: string) => {
+  return `${COLLECTIONS.DISPATCH_QUEUE}/${dispatchQueueDocumentId(campaignId, contactId)}`;
+};
+
+export const getPendingOutboundMessagePath = (queueEntryId: string) => {
+  return `${COLLECTIONS.PENDING_OUTBOUND_MESSAGES}/${queueEntryId}`;
+};

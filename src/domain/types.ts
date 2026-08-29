@@ -90,6 +90,12 @@ export interface DispatchCampaign {
 
 export type DispatchQueueStatus = 'QUEUED' | 'DRAFT_PREPARED' | 'SENT' | 'REPLIED' | 'FAILED' | 'SKIPPED';
 
+export interface DispatchQueueIdentity {
+  id: ID;
+  campaignId: ID;
+  contactId: ID;
+}
+
 export interface DispatchQueueEntry {
   id: ID;
   campaignId: ID;

@@ -151,15 +151,15 @@ export const mockRepository: AppRepository = {
     return success;
   },
 
-  processClientResponse: async (message, conversationId, updatedAt, queueEntryIdToReply, repliedAt) => {
+  processClientResponse: async (message, conversationId, updatedAt, queueEntryToReply, repliedAt) => {
     updateState(draft => {
       draft.messages = [...draft.messages, message];
       draft.conversations = draft.conversations.map(c => 
         c.id === conversationId ? { ...c, unreadCount: c.unreadCount + 1, updatedAt } : c
       );
-      if (queueEntryIdToReply) {
+      if (queueEntryToReply) {
         draft.dispatchQueue = draft.dispatchQueue.map(q => 
-          (q.id === queueEntryIdToReply && q.status === 'SENT') ? { ...q, status: 'REPLIED', repliedAt } : q
+          (q.id === queueEntryToReply.id && q.status === 'SENT') ? { ...q, status: 'REPLIED', repliedAt } : q
         );
       }
     });

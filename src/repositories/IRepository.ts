@@ -1,6 +1,6 @@
 import {
   Tenant, User, Contact, Conversation, Message, PendingOutboundMessage,
-  Opportunity, DispatchCampaign, DispatchQueueEntry, Order, OrderItem, TimelineEvent, Product, ID, FunnelStage
+  Opportunity, DispatchCampaign, DispatchQueueEntry, DispatchQueueIdentity, Order, OrderItem, TimelineEvent, Product, ID, FunnelStage
 } from '../domain/types';
 
 export interface DatabaseState {
@@ -52,7 +52,7 @@ export interface AppRepository extends AppReadStore {
     message: Message,
     conversationId: ID,
     updatedAt: Date,
-    queueEntryIdToReply?: ID,
+    queueEntryToReply?: DispatchQueueIdentity,
     repliedAt?: Date
   ): Promise<void>;
 
