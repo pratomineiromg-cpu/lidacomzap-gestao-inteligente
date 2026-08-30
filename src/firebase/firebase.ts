@@ -1,5 +1,6 @@
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -16,5 +17,6 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Use the default database
 const db = getFirestore(app, "(default)");
+const auth = getAuth(app);
 
-export { app, db };
+export { app, db, auth };

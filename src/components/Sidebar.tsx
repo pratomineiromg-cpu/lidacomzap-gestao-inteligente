@@ -37,8 +37,11 @@ export const Sidebar = () => {
 
   return (
     <div className="w-64 h-screen bg-slate-900 text-slate-300 flex flex-col flex-shrink-0">
-      <div className="h-16 flex items-center px-6 text-white font-bold text-xl tracking-tight border-b border-slate-800">
-        Prato Mineiro
+      <div className="h-16 flex items-center px-6 text-white font-bold text-lg tracking-tight border-b border-slate-800 leading-tight">
+        <div>
+          <div className="text-slate-100">LidacomZap</div>
+          <div className="text-sm font-medium text-slate-400">Gestão Inteligente</div>
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto py-4 custom-scrollbar">

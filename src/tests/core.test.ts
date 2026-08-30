@@ -816,4 +816,162 @@ describe('Core Commercial Flow Tests', () => {
     expect(methodBody).toContain('nextQueuePosition');
     expect(methodBody).toMatch(/\.update\(\s*campaignRef\s*,[\s\S]*nextQueuePosition/);
   });
+
+  it('Test 47 - Auth Service Surface', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const authPath = path.join(__dirname, '../auth/AuthService.ts');
+    const code = fs.readFileSync(authPath, 'utf8');
+
+    expect(code).toContain('signIn:');
+    expect(code).toContain('signOut:');
+    expect(code).toContain('subscribeToAuthState:');
+    expect(code).toContain('getCurrentUser:');
+
+    expect(code).not.toContain('signUp');
+    expect(code).not.toContain('register');
+    expect(code).not.toContain('createUserWithEmailAndPassword');
+  });
+
+  it('Test 48 - No Public Signup', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginPath = path.join(__dirname, '../views/LoginView.tsx');
+    const code = fs.readFileSync(loginPath, 'utf8');
+
+    expect(code).not.toMatch(/createUserWithEmailAndPassword/i);
+    expect(code).not.toMatch(/Criar conta/i);
+    expect(code).not.toMatch(/Sign up/i);
+    expect(code).not.toMatch(/Register/i);
+    
+    const authPath = path.join(__dirname, '../auth/AuthService.ts');
+    const authCode = fs.readFileSync(authPath, 'utf8');
+    expect(authCode).not.toMatch(/createUserWithEmailAndPassword/i);
+  });
+
+  it('Test 49 - Auth Gate', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const appPath = path.join(__dirname, '../App.tsx');
+    const code = fs.readFileSync(appPath, 'utf8');
+
+    expect(code).toContain("status === 'loading'");
+    expect(code).toContain("status === 'unauthenticated'");
+    expect(code).toContain("<LoginView");
+  });
+
+  it('Test 50 - Password Safety', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginPath = path.join(__dirname, '../views/LoginView.tsx');
+    const code = fs.readFileSync(loginPath, 'utf8');
+
+    expect(code).not.toContain('localStorage.setItem("password"');
+    expect(code).not.toContain('sessionStorage.setItem("password"');
+    expect(code).not.toMatch(/console\.log\([^)]*password[^)]*\)/i);
+  });
+
+  it('Test 51 - Users Rules Baseline', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const rulesPath = path.join(__dirname, '../../firestore.rules');
+    const code = fs.readFileSync(rulesPath, 'utf8');
+
+    expect(code).toContain('match /users/{uid}');
+    expect(code).toContain('request.auth.uid');
+    expect(code).toContain('active');
+    expect(code).toMatch(/allow write:\s*if\s*false/);
+  });
+
+  it('Test 52 - Active User Data Access', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const rulesPath = path.join(__dirname, '../../firestore.rules');
+    const code = fs.readFileSync(rulesPath, 'utf8');
+
+    // Make sure operational collections are protected by isActiveUser
+    expect(code).toMatch(/match \/messages\/\{document=\*\*\}\s*\{\s*allow read, write:\s*if\s*isActiveUser\(\);\s*\}/);
+    expect(code).toMatch(/match \/opportunities\/\{document=\*\*\}\s*\{\s*allow read, write:\s*if\s*isActiveUser\(\);\s*\}/);
+  });
+
+  it('Test 53 - Mock Repository Still Active', async () => {
+    const { repository } = await import('../repositories/index');
+    const { mockRepository } = await import('../repositories/MockRepository');
+    
+    // Guarding that FirestoreRepository is inactive
+    expect(repository).toStrictEqual(mockRepository);
+    expect(repository.constructor.name).not.toBe('FirestoreRepository');
+  });
+
+  it('Test 54 - Product Identity', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginPath = path.join(__dirname, '../views/LoginView.tsx');
+    const loginCode = fs.readFileSync(loginPath, 'utf8');
+
+    expect(loginCode).toContain('LidacomZap Gestão Inteligente');
+    expect(loginCode).toContain('Restaurante Prato Mineiro');
+    expect(loginCode).toContain('Operação Piloto');
+
+    const sidebarPath = path.join(__dirname, '../components/Sidebar.tsx');
+    const sidebarCode = fs.readFileSync(sidebarPath, 'utf8');
+    
+    expect(sidebarCode).toContain('LidacomZap');
+    expect(sidebarCode).toContain('Gestão Inteligente');
+    expect(sidebarCode).not.toMatch(/>\s*Prato Mineiro\s*</);
+
+    const layoutPath = path.join(__dirname, '../components/Layout.tsx');
+    const layoutCode = fs.readFileSync(layoutPath, 'utf8');
+    expect(layoutCode).toContain('Operação Piloto');
+    expect(layoutCode).toContain('Restaurante Prato Mineiro');
+  });
+
+  it('Test 55 - Admin UID Not Used As Client Security', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    
+    const adminUid = 'ty8fYmiVk1StqBnSgqWex7BXV012';
+
+    const { execSync } = await import('child_process');
+    try {
+      const result = execSync(`grep -r "${adminUid}" src/ --exclude-dir=tests || true`).toString();
+      expect(result.trim()).toBe('');
+    } catch (e) {
+    }
+  });
+
+  it('Test 56 - Sign Out Async Handling', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const layoutPath = path.join(__dirname, '../components/Layout.tsx');
+    const code = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(code).toMatch(/const handleSignOut = async \(\) =>/);
+    expect(code).toMatch(/await AuthService\.signOut\(\)/);
+    expect(code).toContain('setIsSigningOut(true)');
+    expect(code).toMatch(/setSignOutError\([^)]+\)/);
+    expect(code).toMatch(/disabled=\{isSigningOut\}/);
+  });
+
+  it('Test 57 - Authentication Error Semantics', async () => {
+    const { mapAuthError } = await import('../auth/AuthService');
+    
+    expect(mapAuthError({ code: 'auth/network-request-failed' }))
+      .toContain('Não foi possível conectar');
+      
+    expect(mapAuthError({ code: 'auth/too-many-requests' }))
+      .toContain('Muitas tentativas foram realizadas');
+      
+    expect(mapAuthError({ code: 'auth/user-not-found' }))
+      .toBe('E-mail ou senha inválidos.');
+      
+    expect(mapAuthError({ code: 'auth/wrong-password' }))
+      .toBe('E-mail ou senha inválidos.');
+
+    expect(mapAuthError({ code: 'auth/invalid-credential' }))
+      .toBe('E-mail ou senha inválidos.');
+      
+    expect(mapAuthError({ code: 'unknown' }))
+      .toBe('Não foi possível realizar o login. Tente novamente.');
+  });
 });

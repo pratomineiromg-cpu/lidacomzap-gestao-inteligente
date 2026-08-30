@@ -1,5 +1,6 @@
 // Collection names
 export const COLLECTIONS = {
+  USERS: 'users',
   CONTACTS: 'contacts',
   CONVERSATIONS: 'conversations',
   MESSAGES: 'messages',
@@ -15,6 +16,7 @@ export const COLLECTIONS = {
 } as const;
 
 // Path generators
+export const userDocumentId = (uid: string) => uid;
 export const getOpportunityPath = (contactId: string) => `${COLLECTIONS.OPPORTUNITIES}/${contactId}`;
 export const getCustomerProfilePath = (contactId: string) => `${COLLECTIONS.CUSTOMER_PROFILES}/${contactId}`;
 

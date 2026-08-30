@@ -1,8 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
+import { AuthService } from '../auth/AuthService';
 
 export const Layout = () => {
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+
+    setIsSigningOut(true);
+    setSignOutError(null);
+
+    try {
+      await AuthService.signOut();
+    } catch {
+      setSignOutError('Não foi possível encerrar a sessão. Tente novamente.');
+      setIsSigningOut(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans">
       <Sidebar />
@@ -11,6 +29,16 @@ export const Layout = () => {
           <h1 className="text-lg font-semibold text-slate-800">Operação Piloto</h1>
           <div className="flex items-center space-x-4">
             <div className="text-sm text-slate-500"><span className="font-medium text-slate-700">Restaurante Prato Mineiro</span></div>
+            <div className="flex items-center">
+              {signOutError && <span className="text-red-500 text-xs mr-2">{signOutError}</span>}
+              <button 
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors disabled:opacity-50"
+              >
+                {isSigningOut ? 'Saindo...' : 'Sair'}
+              </button>
+            </div>
             <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold border border-indigo-200">
               A
             </div>
