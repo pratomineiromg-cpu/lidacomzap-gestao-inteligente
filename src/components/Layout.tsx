@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { AuthService } from '../auth/AuthService';
+import { useAuth } from '../auth/AuthProvider';
 
 export const Layout = () => {
+  const { profile } = useAuth();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -20,6 +22,8 @@ export const Layout = () => {
       setIsSigningOut(false);
     }
   };
+
+  const initial = profile?.name ? profile.name.charAt(0).toUpperCase() : 'A';
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans">
@@ -39,8 +43,8 @@ export const Layout = () => {
                 {isSigningOut ? 'Saindo...' : 'Sair'}
               </button>
             </div>
-            <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold border border-indigo-200">
-              A
+            <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold border border-indigo-200" title={profile?.name || ''}>
+              {initial}
             </div>
           </div>
         </header>

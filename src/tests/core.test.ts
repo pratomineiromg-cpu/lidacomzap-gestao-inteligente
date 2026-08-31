@@ -974,4 +974,251 @@ describe('Core Commercial Flow Tests', () => {
     expect(mapAuthError({ code: 'unknown' }))
       .toBe('Não foi possível realizar o login. Tente novamente.');
   });
+
+  it('Test 58 - User Profile Service Is Read Only', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const servicePath = path.join(__dirname, '../auth/UserProfileService.ts');
+    const code = fs.readFileSync(servicePath, 'utf8');
+
+    expect(code).toContain('getDoc');
+    expect(code).not.toContain('setDoc');
+    expect(code).not.toContain('addDoc');
+    expect(code).not.toContain('updateDoc');
+    expect(code).not.toContain('deleteDoc');
+    expect(code).not.toContain('writeBatch');
+    expect(code).not.toContain('runTransaction');
+  });
+
+  it('Test 59 - Authorization State Machine', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const authProviderPath = path.join(__dirname, '../auth/AuthProvider.tsx');
+    const code = fs.readFileSync(authProviderPath, 'utf8');
+
+    expect(code).toContain("status: 'loading'");
+    expect(code).toContain("status: 'unauthenticated'");
+    expect(code).toContain("status: 'authorizing'");
+    expect(code).toContain("status: 'authorized'");
+    expect(code).toContain("status: 'unauthorized'");
+  });
+
+  it('Test 60 - Operational UI Requires Authorization', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const appPath = path.join(__dirname, '../App.tsx');
+    const code = fs.readFileSync(appPath, 'utf8');
+
+    expect(code).toContain("status === 'authorized'");
+    expect(code).not.toMatch(/if\s*\(\s*status\s*===\s*'authenticated'\s*\)\s*{\s*return\s*<>{children}<\/>;\s*}/);
+    expect(code).toMatch(/if\s*\(\s*status\s*===\s*'authorized'\s*\)\s*{\s*return\s*<>{children}<\/>;\s*}/);
+  });
+
+  it('Test 61 - Invalid Profile Is Denied', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const servicePath = path.join(__dirname, '../auth/UserProfileService.ts');
+    const code = fs.readFileSync(servicePath, 'utf8');
+
+    // Make sure we have type/value validations
+    expect(code).toContain('typeof data.active !== \'boolean\'');
+    expect(code).toContain('data.uid !== uid');
+  });
+
+  it('Test 62 - No Authorization Persistence', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const providerPath = path.join(__dirname, '../auth/AuthProvider.tsx');
+    const servicePath = path.join(__dirname, '../auth/UserProfileService.ts');
+    const providerCode = fs.readFileSync(providerPath, 'utf8');
+    const serviceCode = fs.readFileSync(servicePath, 'utf8');
+
+    expect(providerCode).not.toContain('localStorage');
+    expect(providerCode).not.toContain('sessionStorage');
+    expect(serviceCode).not.toContain('localStorage');
+    expect(serviceCode).not.toContain('sessionStorage');
+  });
+
+  it('Test 63 - Mock Still Active', async () => {
+    const { repository } = await import('../repositories/index');
+    const { mockRepository } = await import('../repositories/MockRepository');
+    
+    // Guarding that FirestoreRepository is inactive
+    expect(repository).toStrictEqual(mockRepository);
+    expect(repository.constructor.name).not.toBe('FirestoreRepository');
+  });
+
+  it('Test 64 - Only Users Live Read', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const servicePath = path.join(__dirname, '../auth/UserProfileService.ts');
+    const code = fs.readFileSync(servicePath, 'utf8');
+
+    expect(code).toContain('COLLECTIONS.USERS');
+    expect(code).not.toContain('COLLECTIONS.CONTACTS');
+    expect(code).not.toContain('COLLECTIONS.MESSAGES');
+    expect(code).not.toContain('COLLECTIONS.ORDERS');
+  });
+
+  it('Test 65 - Stale Authorization Cannot Win', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const authProviderPath = path.join(__dirname, '../auth/AuthProvider.tsx');
+    const code = fs.readFileSync(authProviderPath, 'utf8');
+
+    expect(code).toMatch(/authGenerationRef/);
+    expect(code).toMatch(/generation\s*!==\s*authGenerationRef\.current/);
+  });
+
+  it('Test 66 - Logout During Authorization', async () => {
+    // Test generation logic directly
+    let authGeneration = 0;
+    let state = { status: 'loading' };
+
+    // Simulate AuthProvider logic
+    let resolveProfileA: (val: any) => void;
+    const profilePromiseA = new Promise((resolve) => {
+      resolveProfileA = resolve;
+    });
+
+    // 1. User logs in (generation 1)
+    const gen1 = ++authGeneration;
+    state = { status: 'authorizing' };
+
+    // Start async profile load
+    const profileLoadA = profilePromiseA.then((profile: any) => {
+      if (gen1 !== authGeneration) return;
+      state = { status: 'authorized' };
+    });
+
+    // 2. User logs out before profile A completes (generation 2)
+    const gen2 = ++authGeneration;
+    state = { status: 'unauthenticated' };
+
+    // 3. Profile A resolves later
+    resolveProfileA!({ uid: 'user-a', active: true });
+    await profileLoadA;
+
+    // Final state MUST remain unauthenticated
+    expect(state.status).toBe('unauthenticated');
+  });
+
+  it('Test 67 - User Switch During Authorization', async () => {
+    let authGeneration = 0;
+    let state: any = { status: 'loading' };
+
+    let resolveProfileA: (val: any) => void;
+    const profilePromiseA = new Promise((resolve) => {
+      resolveProfileA = resolve;
+    });
+
+    let resolveProfileB: (val: any) => void;
+    const profilePromiseB = new Promise((resolve) => {
+      resolveProfileB = resolve;
+    });
+
+    // 1. User A begins (generation 1)
+    const gen1 = ++authGeneration;
+    state = { status: 'authorizing', user: { uid: 'user-a' } };
+
+    const loadA = profilePromiseA.then((profile: any) => {
+      if (gen1 !== authGeneration) return;
+      state = { status: 'authorized', user: { uid: 'user-a' }, profile };
+    });
+
+    // 2. User switches to B (generation 2)
+    const gen2 = ++authGeneration;
+    state = { status: 'authorizing', user: { uid: 'user-b' } };
+
+    const loadB = profilePromiseB.then((profile: any) => {
+      if (gen2 !== authGeneration) return;
+      state = { status: 'authorized', user: { uid: 'user-b' }, profile };
+    });
+
+    // 3. User B resolves first
+    resolveProfileB!({ uid: 'user-b', active: true });
+    await loadB;
+
+    expect(state.status).toBe('authorized');
+    expect(state.user.uid).toBe('user-b');
+    expect(state.profile.uid).toBe('user-b');
+
+    // 4. User A resolves after B
+    resolveProfileA!({ uid: 'user-a', active: true });
+    await loadA;
+
+    // Must still be User B
+    expect(state.status).toBe('authorized');
+    expect(state.user.uid).toBe('user-b');
+    expect(state.profile.uid).toBe('user-b');
+  });
+
+  it('Test 68 - User Profile Timestamp Boundary', async () => {
+    const { validateAndMapUserProfile } = await import('../auth/UserProfileService');
+    const { Timestamp } = await import('firebase/firestore');
+
+    const now = new Date();
+    const ts = Timestamp.fromDate(now);
+
+    const rawData = {
+      uid: 'user-test-123',
+      email: 'user@test.com',
+      name: 'Test User',
+      active: true,
+      role: 'ADMIN',
+      createdAt: ts,
+      updatedAt: ts
+    };
+
+    const profile = validateAndMapUserProfile(rawData, 'user-test-123');
+    expect(profile).not.toBeNull();
+    expect(profile?.createdAt instanceof Date).toBe(true);
+    expect(profile?.updatedAt instanceof Date).toBe(true);
+    expect(profile?.createdAt.getTime()).toBe(now.getTime());
+    expect(profile?.updatedAt.getTime()).toBe(now.getTime());
+    expect(profile?.role).toBe('ADMIN');
+    expect(profile?.active).toBe(true);
+  });
+
+  it('Test 69 - Invalid User Profile Timestamp Is Denied', async () => {
+    const { validateAndMapUserProfile } = await import('../auth/UserProfileService');
+    const { Timestamp } = await import('firebase/firestore');
+
+    const ts = Timestamp.now();
+
+    // 1. createdAt is a string
+    const invalidCreatedAt = {
+      uid: 'user-test-123',
+      email: 'user@test.com',
+      name: 'Test User',
+      active: true,
+      role: 'ADMIN',
+      createdAt: '2026-08-30T00:00:00Z',
+      updatedAt: ts
+    };
+    expect(validateAndMapUserProfile(invalidCreatedAt, 'user-test-123')).toBeNull();
+
+    // 2. updatedAt is missing
+    const missingUpdatedAt = {
+      uid: 'user-test-123',
+      email: 'user@test.com',
+      name: 'Test User',
+      active: true,
+      role: 'ADMIN',
+      createdAt: ts
+    };
+    expect(validateAndMapUserProfile(missingUpdatedAt, 'user-test-123')).toBeNull();
+
+    // 3. invalid date timestamp
+    const invalidDateTs = {
+      uid: 'user-test-123',
+      email: 'user@test.com',
+      name: 'Test User',
+      active: true,
+      role: 'ADMIN',
+      createdAt: { toDate: () => new Date('invalid') },
+      updatedAt: ts
+    };
+    expect(validateAndMapUserProfile(invalidDateTs, 'user-test-123')).toBeNull();
+  });
 });

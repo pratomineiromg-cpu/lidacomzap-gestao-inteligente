@@ -13,11 +13,12 @@ import { Disparador } from './views/Disparador';
 import { Pedidos } from './views/Pedidos';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { LoginView } from './views/LoginView';
+import { UnauthorizedView } from './views/UnauthorizedView';
 
 const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { status } = useAuth();
 
-  if (status === 'loading') {
+  if (status === 'loading' || status === 'authorizing') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-gray-500">Carregando...</div>
@@ -29,7 +30,15 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <LoginView />;
   }
 
-  return <>{children}</>;
+  if (status === 'unauthorized') {
+    return <UnauthorizedView />;
+  }
+
+  if (status === 'authorized') {
+    return <>{children}</>;
+  }
+
+  return null;
 };
 
 export default function App() {

@@ -5,8 +5,9 @@ export interface AuthenticatedUser {
 }
 
 export interface AuthState {
-  status: 'loading' | 'authenticated' | 'unauthenticated';
+  status: 'loading' | 'unauthenticated' | 'authorizing' | 'authorized' | 'unauthorized';
   user?: AuthenticatedUser;
+  profile?: AppUserProfile;
   error?: string;
 }
 
