@@ -1221,4 +1221,540 @@ describe('Core Commercial Flow Tests', () => {
     };
     expect(validateAndMapUserProfile(invalidDateTs, 'user-test-123')).toBeNull();
   });
+
+  it('Test 70 - Data Source Mode Parsing', async () => {
+    const { parseDataSourceMode } = await import('../config/dataSource');
+    const { createRepository } = await import('../repositories');
+
+    expect(parseDataSourceMode(undefined)).toBe('MOCK');
+    expect(parseDataSourceMode('')).toBe('MOCK');
+    expect(parseDataSourceMode('   ')).toBe('MOCK');
+    expect(parseDataSourceMode('MOCK')).toBe('MOCK');
+    expect(parseDataSourceMode('FIRESTORE_READONLY')).toBe('FIRESTORE_READONLY');
+    expect(parseDataSourceMode('FIRESTORE')).toBe('FIRESTORE');
+
+    expect(() => parseDataSourceMode('INVALID')).toThrow('Invalid DATA_SOURCE_MODE');
+    expect(() => createRepository('FIRESTORE')).toThrow('Firestore write mode is not enabled.');
+  });
+
+  it('Test 71 - Mock Is Safe Default', async () => {
+    const { getDataSourceMode } = await import('../config/dataSource');
+    const { createRepository } = await import('../repositories');
+
+    // Default mode is MOCK
+    const mode = getDataSourceMode();
+    expect(mode).toBe('MOCK');
+
+    const defaultRepo = createRepository('MOCK');
+    expect(defaultRepo.getState().contacts.length).toBe(20);
+    expect(defaultRepo.getState().campaigns.length).toBe(1);
+  });
+
+  it('Test 72 - Firestore ReadOnly Repository Cannot Write', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    await expect(repo.addDispatchQueueEntries([])).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.prepareDrafts([], [])).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.sendPreparedMessage({} as any, 'd1', 'q1', new Date())).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.processClientResponse({} as any, 'c1', new Date())).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.createOrderWithItems({} as any, [])).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.updateCampaignDailyLimit('c1', 100, new Date())).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.transitionOpportunityStage('ct1', 't1', 'LEAD', new Date())).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.addTimelineEvent({} as any)).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+    await expect(repo.reset()).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+  });
+
+  it('Test 73 - Empty Firestore Hydrates To Empty State', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    expect(repo.getHydrationStatus()).toBe('idle');
+
+    // Simulate empty Firestore collections
+    const success = await repo.hydrate(async () => []);
+    expect(success).toBe(true);
+    expect(repo.getHydrationStatus()).toBe('ready');
+    expect(repo.getHydrationError()).toBeNull();
+
+    const state = repo.getState();
+    expect(state.contacts.length).toBe(0);
+    expect(state.conversations.length).toBe(0);
+    expect(state.opportunities.length).toBe(0);
+    expect(state.campaigns.length).toBe(0);
+    expect(state.dispatchQueue.length).toBe(0);
+    expect(state.pendingMessages.length).toBe(0);
+    expect(state.orders.length).toBe(0);
+    expect(state.orderItems.length).toBe(0);
+    expect(state.timeline.length).toBe(0);
+    expect(state.users.length).toBe(0);
+    // Does NOT contain mock data
+    expect(state.contacts.length).not.toBe(20);
+  });
+
+  it('Test 74 - Firestore Failure Never Falls Back To Mock', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    const success = await repo.hydrate(async (col) => {
+      if (col === 'opportunities') {
+        throw new Error('Firestore connection failed');
+      }
+      return [];
+    });
+
+    expect(success).toBe(false);
+    expect(repo.getHydrationStatus()).toBe('error');
+    expect(repo.getHydrationError()).toContain('Firestore connection failed');
+
+    const state = repo.getState();
+    // Cache must remain empty, never fall back to mock data
+    expect(state.contacts.length).toBe(0);
+    expect(state.contacts.length).not.toBe(20);
+    expect(state.opportunities.length).toBe(0);
+  });
+
+  it('Test 75 - Firestore Hydration Is Atomic', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    const success = await repo.hydrate(async (col) => {
+      if (col === 'contacts') {
+        return [{ id: 'c1', name: 'Real Contact', phone: '123' }];
+      }
+      if (col === 'orders') {
+        throw new Error('Orders query failed');
+      }
+      return [];
+    });
+
+    expect(success).toBe(false);
+    expect(repo.getHydrationStatus()).toBe('error');
+
+    // Partial data must NOT be committed to cache
+    const state = repo.getState();
+    expect(state.contacts.length).toBe(0);
+  });
+
+  it('Test 76 - Operational Hydration Requires Authorized User', async () => {
+    const { resolveAuthGateState, isAuthorizedToAccessContent } = await import('../components/AuthGate');
+
+    // Loading / Initializing: DataSourceGate is not reached
+    expect(resolveAuthGateState('loading')).toBe('LOADING');
+    expect(isAuthorizedToAccessContent('loading')).toBe(false);
+
+    // Authorizing (Firestore profile validation in progress): DataSourceGate is not reached
+    expect(resolveAuthGateState('authorizing')).toBe('LOADING');
+    expect(isAuthorizedToAccessContent('authorizing')).toBe(false);
+
+    // Unauthenticated: Redirects to Login, DataSourceGate is not reached
+    expect(resolveAuthGateState('unauthenticated')).toBe('UNAUTHENTICATED');
+    expect(isAuthorizedToAccessContent('unauthenticated')).toBe(false);
+
+    // Unauthorized: Redirects to UnauthorizedView, DataSourceGate is not reached
+    expect(resolveAuthGateState('unauthorized')).toBe('UNAUTHORIZED');
+    expect(isAuthorizedToAccessContent('unauthorized')).toBe(false);
+
+    // Authorized: Only authorized status allows DataSourceGate / children access
+    expect(resolveAuthGateState('authorized')).toBe('AUTHORIZED');
+    expect(isAuthorizedToAccessContent('authorized')).toBe(true);
+  });
+
+  it('Test 77 - Stale Hydration Cannot Win', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    let resolveGen1: (val: any[]) => void;
+    const slowPromise = new Promise<any[]>((resolve) => {
+      resolveGen1 = resolve;
+    });
+
+    const now = new Date();
+
+    // 1. Trigger first slow hydration (Gen 1)
+    const hyd1Promise = repo.hydrate(async (col) => {
+      if (col === 'contacts') {
+        return await slowPromise;
+      }
+      return [];
+    });
+
+    expect(repo.getHydrationGeneration()).toBe(1);
+
+    // 2. Trigger second fast hydration (Gen 2) with different data
+    const hyd2Promise = repo.hydrate(async (col) => {
+      if (col === 'contacts') {
+        return [{
+          id: 'contact-fast-gen2',
+          tenantId: 't-pratomineiro',
+          name: 'Fast Contact Gen 2',
+          phone: '999',
+          tags: [],
+          notes: '',
+          createdAt: now,
+          updatedAt: now
+        }];
+      }
+      return [];
+    });
+
+    expect(repo.getHydrationGeneration()).toBe(2);
+
+    // Wait for Gen 2 to resolve
+    const res2 = await hyd2Promise;
+    expect(res2).toBe(true);
+    expect(repo.getState().contacts[0]?.id).toBe('contact-fast-gen2');
+
+    // 3. Resolve Gen 1 slow promise with stale data
+    resolveGen1!([{
+      id: 'contact-slow-gen1',
+      tenantId: 't-pratomineiro',
+      name: 'Slow Contact Gen 1',
+      phone: '111',
+      tags: [],
+      notes: '',
+      createdAt: now,
+      updatedAt: now
+    }]);
+    const res1 = await hyd1Promise;
+    expect(res1).toBe(false);
+
+    // State MUST remain from Gen 2, not overwritten by stale Gen 1!
+    expect(repo.getState().contacts[0]?.id).toBe('contact-fast-gen2');
+  });
+
+  it('Test 78 - ReadOnly UI Mode Disables Mutations', async () => {
+    const { parseDataSourceMode, isReadOnlyMode } = await import('../config/dataSource');
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const React = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { CRM } = await import('../views/CRM');
+    const { Disparador } = await import('../views/Disparador');
+    const { Central } = await import('../views/Central');
+    const { repository } = await import('../repositories');
+
+    const mockMode = parseDataSourceMode('MOCK');
+    const readOnlyMode = parseDataSourceMode('FIRESTORE_READONLY');
+
+    expect(mockMode).toBe('MOCK');
+    expect(readOnlyMode).toBe('FIRESTORE_READONLY');
+
+    // Seed an opportunity so CRM renders controls
+    await repository.transitionOpportunityStage('c-1', 't-1', 'LEAD', new Date());
+
+    // 1. In MOCK mode: isReadOnlyMode is false and UI mutation controls are enabled
+    process.env.VITE_DATA_SOURCE_MODE = 'MOCK';
+    expect(isReadOnlyMode()).toBe(false);
+
+    const crmMock = renderToStaticMarkup(React.createElement(CRM));
+    const dispMock = renderToStaticMarkup(React.createElement(Disparador));
+    const centralMock = renderToStaticMarkup(React.createElement(Central));
+
+    expect(crmMock).toContain('LEAD');
+    expect(crmMock).not.toContain('Indisponível no modo somente leitura.');
+    expect(crmMock).not.toMatch(/<select[^>]*disabled=\"\"/);
+
+    expect(dispMock).toContain('Popular Fila de Contatos');
+    expect(dispMock).not.toContain('Indisponível no modo somente leitura.');
+    expect(dispMock).toMatch(/<button class=\"[^\"]*\">Popular Fila de Contatos<\/button>/);
+    expect(dispMock).toContain('cursor-pointer group');
+
+    expect(centralMock).toContain('Cliente 1');
+
+    // 2. In FIRESTORE_READONLY mode: isReadOnlyMode is true and UI mutation controls are disabled
+    process.env.VITE_DATA_SOURCE_MODE = 'FIRESTORE_READONLY';
+    expect(isReadOnlyMode()).toBe(true);
+
+    const crmReadOnly = renderToStaticMarkup(React.createElement(CRM));
+    const dispReadOnly = renderToStaticMarkup(React.createElement(Disparador));
+    const centralReadOnly = renderToStaticMarkup(React.createElement(Central));
+
+    // CRM: stage selector disabled with tooltip
+    expect(crmReadOnly).toContain('Indisponível no modo somente leitura.');
+    expect(crmReadOnly).toMatch(/<select[^>]*disabled=\"\"[^>]*title=\"Indisponível no modo somente leitura\.\"/);
+
+    // Disparador: Popular Fila disabled with tooltip and disabled limit editor
+    expect(dispReadOnly).toContain('Indisponível no modo somente leitura.');
+    expect(dispReadOnly).toMatch(/<button[^>]*disabled=\"\"[^>]*title=\"Indisponível no modo somente leitura\.\"[^>]*>Popular Fila de Contatos<\/button>/);
+    expect(dispReadOnly).toContain('opacity-70 cursor-not-allowed');
+
+    // Central: rendered in read-only mode
+    expect(centralReadOnly).toContain('Cliente 1');
+
+    // Reset env
+    delete process.env.VITE_DATA_SOURCE_MODE;
+
+    // In FIRESTORE_READONLY mode, repo mutation methods are strictly rejected
+    const readOnlyRepo = new FirestoreReadOnlyRepository();
+    await expect(readOnlyRepo.addTimelineEvent({
+      id: 'e1',
+      contactId: 'c1',
+      type: 'SYSTEM',
+      description: 'test',
+      createdAt: new Date()
+    })).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
+  });
+
+  it('Test 79 - Firestore ReadOnly Operational Collection Allowlist', async () => {
+    const { isOperationalCollectionAllowed, OPERATIONAL_COLLECTIONS } = await import('../repositories/FirestoreReadOnlyRepository');
+
+    expect(OPERATIONAL_COLLECTIONS.length).toBe(12);
+
+    expect(isOperationalCollectionAllowed('contacts')).toBe(true);
+    expect(isOperationalCollectionAllowed('conversations')).toBe(true);
+    expect(isOperationalCollectionAllowed('messages')).toBe(true);
+    expect(isOperationalCollectionAllowed('opportunities')).toBe(true);
+    expect(isOperationalCollectionAllowed('dispatchCampaigns')).toBe(true);
+    expect(isOperationalCollectionAllowed('dispatchQueue')).toBe(true);
+    expect(isOperationalCollectionAllowed('pendingOutboundMessages')).toBe(true);
+    expect(isOperationalCollectionAllowed('orders')).toBe(true);
+    expect(isOperationalCollectionAllowed('orderItems')).toBe(true);
+    expect(isOperationalCollectionAllowed('timelineEvents')).toBe(true);
+    expect(isOperationalCollectionAllowed('customerProfiles')).toBe(true);
+    expect(isOperationalCollectionAllowed('customerAddresses')).toBe(true);
+
+    // Forbidden: users belongs to Auth/Authorization layer
+    expect(isOperationalCollectionAllowed('users')).toBe(false);
+    expect(isOperationalCollectionAllowed('unknown_collection')).toBe(false);
+  });
+
+  it('Test 80 - Class Repository External Store Binding', async () => {
+    const { subscribeToRepository, getRepositorySnapshot } = await import('../store/useAppStore');
+    
+    // Direct invocation must not throw TypeError from losing class 'this' context
+    expect(() => getRepositorySnapshot()).not.toThrow();
+    const snapshot = getRepositorySnapshot();
+    expect(snapshot).toBeDefined();
+    expect(Array.isArray(snapshot.contacts)).toBe(true);
+
+    let notified = false;
+    const unsubscribe = subscribeToRepository(() => {
+      notified = true;
+    });
+    expect(typeof unsubscribe).toBe('function');
+    unsubscribe();
+  });
+
+  it('Test 81 - All Operational Collections Are Actually Hydrated', async () => {
+    const { FirestoreReadOnlyRepository, OPERATIONAL_COLLECTIONS } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    const queriedCollections: string[] = [];
+    const success = await repo.hydrate(async (colName) => {
+      queriedCollections.push(colName);
+      return [];
+    });
+
+    expect(success).toBe(true);
+    expect(queriedCollections.length).toBe(12);
+    expect(queriedCollections.length).toBe(OPERATIONAL_COLLECTIONS.length);
+
+    // Every single operational collection must be queried
+    OPERATIONAL_COLLECTIONS.forEach(col => {
+      expect(queriedCollections).toContain(col);
+    });
+  });
+
+  it('Test 82 - Customer Profile And Address Hydration', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    const mockProfile = {
+      id: 'profile-1',
+      contactId: 'c1',
+      fullName: 'Cliente Prato Mineiro',
+      phone: '31988887777',
+      email: 'cliente@pratomineiro.com'
+    };
+
+    const mockAddress = {
+      id: 'address-1',
+      contactId: 'c1',
+      street: 'Rua das Flores',
+      number: '123',
+      neighborhood: 'Centro',
+      complement: 'Apto 101',
+      postalCode: '30110-000'
+    };
+
+    const success = await repo.hydrate(async (colName) => {
+      if (colName === 'customerProfiles') {
+        return [mockProfile];
+      }
+      if (colName === 'customerAddresses') {
+        return [mockAddress];
+      }
+      return [];
+    });
+
+    expect(success).toBe(true);
+    const state = repo.getState();
+    expect(state.customerProfiles.length).toBe(1);
+    expect(state.customerProfiles[0]).toEqual(mockProfile);
+    expect(state.customerAddresses.length).toBe(1);
+    expect(state.customerAddresses[0]).toEqual(mockAddress);
+  });
+
+  it('Test 83 - Malformed Firestore Document Fails Hydration', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    // 1. Missing required field 'name' on contact
+    const badContact = {
+      id: 'c1',
+      tenantId: 't-pratomineiro',
+      // name is missing
+      phone: '123456',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const success = await repo.hydrate(async (colName) => {
+      if (colName === 'contacts') return [badContact];
+      return [];
+    });
+
+    expect(success).toBe(false);
+    expect(repo.getHydrationStatus()).toBe('error');
+    expect(repo.getHydrationError()).toContain('contacts');
+    expect(repo.getState().contacts.length).toBe(0);
+
+    // 2. Missing required field 'contactId' on conversation
+    const repo2 = new FirestoreReadOnlyRepository();
+    const badConv = {
+      id: 'conv1',
+      tenantId: 't-pratomineiro',
+      // contactId missing
+      unreadCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const success2 = await repo2.hydrate(async (colName) => {
+      if (colName === 'conversations') return [badConv];
+      return [];
+    });
+
+    expect(success2).toBe(false);
+    expect(repo2.getHydrationStatus()).toBe('error');
+    expect(repo2.getHydrationError()).toContain('conversations');
+  });
+
+  it('Test 84 - Invalid Enum And Timestamp Never Default', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const repo = new FirestoreReadOnlyRepository();
+
+    // 1. Invalid funnel stage
+    const badOpportunity = {
+      id: 'opp1',
+      tenantId: 't-pratomineiro',
+      contactId: 'c1',
+      stage: 'INVALID_STAGE_DOES_NOT_EXIST',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const success1 = await repo.hydrate(async (colName) => {
+      if (colName === 'opportunities') return [badOpportunity];
+      return [];
+    });
+
+    expect(success1).toBe(false);
+    expect(repo.getHydrationStatus()).toBe('error');
+    expect(repo.getHydrationError()).toContain('stage');
+
+    // 2. Invalid date string on createdAt
+    const repo2 = new FirestoreReadOnlyRepository();
+    const badDateMessage = {
+      id: 'msg1',
+      conversationId: 'conv1',
+      sender: 'USER',
+      content: 'Olá',
+      createdAt: 'invalid-timestamp-format'
+    };
+
+    const success2 = await repo2.hydrate(async (colName) => {
+      if (colName === 'messages') return [badDateMessage];
+      return [];
+    });
+
+    expect(success2).toBe(false);
+    expect(repo2.getHydrationStatus()).toBe('error');
+    expect(repo2.getHydrationError()).toContain('createdAt');
+  });
+
+  it('Test 85 - Contact Required Fields Never Default Silently', async () => {
+    const { FirestoreReadOnlyRepository } = await import('../repositories/FirestoreReadOnlyRepository');
+    const { validateContact } = await import('../repositories/firestore/readValidators');
+
+    // 1. Missing tags field: direct validation throws and hydration fails
+    const contactMissingTags = {
+      id: 'c-notags',
+      tenantId: 't-1',
+      name: 'Contact Without Tags',
+      phone: '5511999990001',
+      notes: 'Some note',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    expect(() => validateContact(contactMissingTags)).toThrow(/tags/);
+
+    const repo1 = new FirestoreReadOnlyRepository();
+    const success1 = await repo1.hydrate(async (col) => {
+      if (col === 'contacts') return [contactMissingTags];
+      return [];
+    });
+    expect(success1).toBe(false);
+    expect(repo1.getHydrationStatus()).toBe('error');
+    expect(repo1.getHydrationError()).toContain('tags');
+
+    // 2. Missing notes field: direct validation throws and hydration fails
+    const contactMissingNotes = {
+      id: 'c-nonotes',
+      tenantId: 't-1',
+      name: 'Contact Without Notes',
+      phone: '5511999990002',
+      tags: ['VIP'],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    expect(() => validateContact(contactMissingNotes)).toThrow(/notes/);
+
+    const repo2 = new FirestoreReadOnlyRepository();
+    const success2 = await repo2.hydrate(async (col) => {
+      if (col === 'contacts') return [contactMissingNotes];
+      return [];
+    });
+    expect(success2).toBe(false);
+    expect(repo2.getHydrationStatus()).toBe('error');
+    expect(repo2.getHydrationError()).toContain('notes');
+
+    // 3. Valid contact with empty array tags and empty string notes: accepted
+    const validContact = {
+      id: 'c-valid',
+      tenantId: 't-1',
+      name: 'Valid Contact',
+      phone: '5511999990003',
+      tags: [],
+      notes: '',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const validated = validateContact(validContact);
+    expect(validated.id).toBe('c-valid');
+    expect(validated.tags).toEqual([]);
+    expect(validated.notes).toBe('');
+
+    const repo3 = new FirestoreReadOnlyRepository();
+    const success3 = await repo3.hydrate(async (col) => {
+      if (col === 'contacts') return [validContact];
+      return [];
+    });
+    expect(success3).toBe(true);
+    expect(repo3.getHydrationStatus()).toBe('ready');
+    expect(repo3.getState().contacts.length).toBe(1);
+    expect(repo3.getState().contacts[0].id).toBe('c-valid');
+  });
 });
+
+

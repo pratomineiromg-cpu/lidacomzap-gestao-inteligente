@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { prepareCampaignQueue, processQueueDrafts, updateCampaignDailyLimit } from '../services/Actions';
+import { isReadOnlyMode } from '../config/dataSource';
 
 export const Disparador = () => {
   const { campaigns, dispatchQueue, contacts } = useAppStore();
@@ -8,9 +9,27 @@ export const Disparador = () => {
   const [tempLimit, setTempLimit] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const readOnly = isReadOnlyMode();
   
   // Use first campaign for demo
   const campaign = campaigns[0];
+
+  if (!campaign) {
+    return (
+      <div className="p-8 max-w-5xl mx-auto">
+        <div className="flex justify-between items-end mb-8">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Disparador Inteligente</h2>
+            <p className="text-sm text-slate-500 mt-1">Transforme sua base de contatos em vendas ativas.</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500 shadow-sm">
+          Nenhuma campanha cadastrada.
+        </div>
+      </div>
+    );
+  }
+
   const queueItems = dispatchQueue.filter(q => q.campaignId === campaign.id);
   const queuedCount = queueItems.filter(q => q.status === 'QUEUED').length;
   const draftCount = queueItems.filter(q => q.status === 'DRAFT_PREPARED').length;
@@ -18,13 +37,13 @@ export const Disparador = () => {
   const repliedCount = queueItems.filter(q => q.status === 'REPLIED').length;
 
   const handleEditLimit = () => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     setTempLimit(campaign.dailyLimit);
     setEditingLimit(true);
   };
 
   const handleSaveLimit = async () => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     let limit = Math.floor(tempLimit);
     if (isNaN(limit) || limit < 1) {
       limit = 1;
@@ -43,7 +62,7 @@ export const Disparador = () => {
   };
 
   const handlePrepareQueue = async () => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     setIsProcessing(true);
     setActionError(null);
     try {
@@ -57,7 +76,7 @@ export const Disparador = () => {
   };
 
   const handleProcessDrafts = async () => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     setIsProcessing(true);
     setActionError(null);
     try {
@@ -111,12 +130,22 @@ export const Disparador = () => {
                         className="w-20 text-sm border border-slate-300 rounded px-2 py-1 outline-none focus:border-indigo-500"
                         autoFocus
                       />
-                      <button onClick={handleSaveLimit} className="text-xs bg-indigo-600 text-white px-2 py-1.5 rounded hover:bg-indigo-700 transition-colors">Salvar</button>
+                      <button 
+                        onClick={handleSaveLimit} 
+                        disabled={readOnly || isProcessing}
+                        className="text-xs bg-indigo-600 text-white px-2 py-1.5 rounded hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                      >
+                        Salvar
+                      </button>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2 cursor-pointer group" onClick={handleEditLimit}>
+                    <div 
+                      className={`flex items-center space-x-2 ${readOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer group'}`} 
+                      onClick={handleEditLimit}
+                      title={readOnly ? "Indisponível no modo somente leitura." : undefined}
+                    >
                       <span className="font-bold text-slate-900">{campaign.dailyLimit} envios</span>
-                      <span className="text-xs text-indigo-600 underline opacity-0 group-hover:opacity-100 transition-opacity">Editar</span>
+                      {!readOnly && <span className="text-xs text-indigo-600 underline opacity-0 group-hover:opacity-100 transition-opacity">Editar</span>}
                     </div>
                   )}
                 </div>
@@ -131,14 +160,16 @@ export const Disparador = () => {
           <div className="flex space-x-4 border-t border-slate-100 pt-6">
             <button 
               onClick={handlePrepareQueue}
-              disabled={isProcessing}
+              disabled={readOnly || isProcessing}
+              title={readOnly ? "Indisponível no modo somente leitura." : undefined}
               className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
             >
               Popular Fila de Contatos
             </button>
             <button 
               onClick={handleProcessDrafts}
-              disabled={queuedCount === 0 || isProcessing}
+              disabled={readOnly || queuedCount === 0 || isProcessing}
+              title={readOnly ? "Indisponível no modo somente leitura." : undefined}
               className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-sm transition-colors"
             >
               Preparar Rascunhos ({queuedCount})

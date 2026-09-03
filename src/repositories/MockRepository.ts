@@ -58,6 +58,8 @@ export const createInitialState = (): DatabaseState => {
     orderItems: [],
     timeline: [],
     products,
+    customerProfiles: [],
+    customerAddresses: [],
   };
 };
 

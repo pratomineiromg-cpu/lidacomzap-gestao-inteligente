@@ -4,11 +4,13 @@ import { sendDraftMessage, simulateClientResponse, createOrder, changeOpportunit
 import { format } from 'date-fns';
 import { Search, Send, UserCircle2, Tag, ShoppingBag, Info, Phone, PackageOpen, MessageSquare } from 'lucide-react';
 import { FunnelStage } from '../domain/types';
+import { isReadOnlyMode } from '../config/dataSource';
 
 export const Central = () => {
   const { contacts, conversations, messages, pendingMessages, opportunities, timeline, products } = useAppStore();
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const readOnly = isReadOnlyMode();
   
   const selectedConv = conversations.find(c => c.id === selectedConvId);
   const selectedContact = selectedConv ? contacts.find(c => c.id === selectedConv.contactId) : null;
@@ -24,62 +26,59 @@ export const Central = () => {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleSendDraft = async () => {
-    if (selectedConvId && draftMessage && !isProcessing) {
-      setIsProcessing(true);
-      setActionError(null);
-      try {
-        await sendDraftMessage(selectedConvId);
-      } catch (err) {
-        setActionError('Erro ao enviar mensagem.');
-      } finally {
-        setIsProcessing(false);
-      }
+    if (readOnly || isProcessing || !selectedConvId || !draftMessage) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await sendDraftMessage(selectedConvId);
+    } catch (err) {
+      setActionError('Erro ao enviar mensagem.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleSimulateResponse = async () => {
-    if (selectedConvId && !isProcessing) {
-      setIsProcessing(true);
-      setActionError(null);
-      try {
-        await simulateClientResponse(selectedConvId);
-      } catch (err) {
-        setActionError('Erro ao simular resposta.');
-      } finally {
-        setIsProcessing(false);
-      }
+    if (readOnly || isProcessing || !selectedConvId) return;
+    setIsProcessing(true);
+    setActionError(null);
+    try {
+      await simulateClientResponse(selectedConvId);
+    } catch (err) {
+      setActionError('Erro ao simular resposta.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleCreateOrder = async () => {
-    if (selectedContact && orderItem.productId && !isProcessing) {
-      setIsProcessing(true);
-      setActionError(null);
-      const product = products.find(p => p.id === orderItem.productId);
-      if (product) {
-        try {
-          await createOrder(selectedContact.id, [{
-            productId: product.id,
-            productName: product.name,
-            price: product.price,
-            quantity: orderItem.quantity,
-            observation: orderItem.observation
-          }], 'PIX');
-          setOrderModalOpen(false);
-          setOrderItem({ productId: '', quantity: 1, observation: '' });
-        } catch (err) {
-          setActionError('Erro ao criar pedido.');
-        } finally {
-          setIsProcessing(false);
-        }
-      } else {
+    if (readOnly || isProcessing || !selectedContact || !orderItem.productId) return;
+    setIsProcessing(true);
+    setActionError(null);
+    const product = products.find(p => p.id === orderItem.productId);
+    if (product) {
+      try {
+        await createOrder(selectedContact.id, [{
+          productId: product.id,
+          productName: product.name,
+          price: product.price,
+          quantity: orderItem.quantity,
+          observation: orderItem.observation
+        }], 'PIX');
+        setOrderModalOpen(false);
+        setOrderItem({ productId: '', quantity: 1, observation: '' });
+      } catch (err) {
+        setActionError('Erro ao criar pedido.');
+      } finally {
         setIsProcessing(false);
       }
+    } else {
+      setIsProcessing(false);
     }
   };
 
   const handleStageChange = async (contactId: string, stage: FunnelStage) => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     setIsProcessing(true);
     setActionError(null);
     try {
@@ -106,34 +105,40 @@ export const Central = () => {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {conversations.map(conv => {
-            const contact = contacts.find(c => c.id === conv.contactId);
-            if (!contact) return null;
-            const opp = opportunities.find(o => o.contactId === contact.id);
-            const draft = pendingMessages.find(p => p.conversationId === conv.id);
-            
-            return (
-              <div 
-                key={conv.id}
-                onClick={() => setSelectedConvId(conv.id)}
-                className={`flex items-start p-4 border-b border-slate-100 cursor-pointer transition-colors ${selectedConvId === conv.id ? 'bg-indigo-50' : 'hover:bg-slate-100 bg-white'}`}
-              >
-                <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 mr-3 flex-shrink-0">
-                  <UserCircle2 className="h-6 w-6" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-0.5">
-                    <h4 className="text-sm font-semibold text-slate-900 truncate">{contact.name}</h4>
-                    {opp && <span className="text-[10px] font-medium bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded ml-2 whitespace-nowrap">{opp.stage}</span>}
+          {conversations.length === 0 ? (
+            <div className="p-6 text-center text-slate-400 text-sm">
+              Nenhuma conversa encontrada.
+            </div>
+          ) : (
+            conversations.map(conv => {
+              const contact = contacts.find(c => c.id === conv.contactId);
+              if (!contact) return null;
+              const opp = opportunities.find(o => o.contactId === contact.id);
+              const draft = pendingMessages.find(p => p.conversationId === conv.id);
+              
+              return (
+                <div 
+                  key={conv.id}
+                  onClick={() => setSelectedConvId(conv.id)}
+                  className={`flex items-start p-4 border-b border-slate-100 cursor-pointer transition-colors ${selectedConvId === conv.id ? 'bg-indigo-50' : 'hover:bg-slate-100 bg-white'}`}
+                >
+                  <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 mr-3 flex-shrink-0">
+                    <UserCircle2 className="h-6 w-6" />
                   </div>
-                  <p className="text-xs text-slate-500 truncate">
-                    {draft ? <span className="text-amber-600 font-medium">[Rascunho] </span> : null}
-                    {contact.phone}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-0.5">
+                      <h4 className="text-sm font-semibold text-slate-900 truncate">{contact.name}</h4>
+                      {opp && <span className="text-[10px] font-medium bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded ml-2 whitespace-nowrap">{opp.stage}</span>}
+                    </div>
+                    <p className="text-xs text-slate-500 truncate">
+                      {draft ? <span className="text-amber-600 font-medium">[Rascunho] </span> : null}
+                      {contact.phone}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -153,10 +158,20 @@ export const Central = () => {
               </div>
               <div className="flex items-center space-x-2">
                 {actionError && <span className="text-xs text-red-500 mr-2">{actionError}</span>}
-                <button onClick={handleSimulateResponse} disabled={isProcessing} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50">
+                <button 
+                  onClick={handleSimulateResponse} 
+                  disabled={readOnly || isProcessing} 
+                  title={readOnly ? "Indisponível no modo somente leitura." : undefined}
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition-colors disabled:opacity-50"
+                >
                   Simular Resposta
                 </button>
-                <button onClick={() => setOrderModalOpen(true)} disabled={isProcessing} className="px-3 py-1.5 bg-emerald-600 border border-emerald-700 rounded text-sm font-medium text-white hover:bg-emerald-700 shadow-sm flex items-center transition-colors disabled:opacity-50">
+                <button 
+                  onClick={() => setOrderModalOpen(true)} 
+                  disabled={readOnly || isProcessing} 
+                  title={readOnly ? "Indisponível no modo somente leitura." : undefined}
+                  className="px-3 py-1.5 bg-emerald-600 border border-emerald-700 rounded text-sm font-medium text-white hover:bg-emerald-700 shadow-sm flex items-center transition-colors disabled:opacity-50"
+                >
                   <ShoppingBag className="w-4 h-4 mr-1.5" />
                   Gerar Pedido
                 </button>
@@ -200,7 +215,8 @@ export const Central = () => {
                   />
                   <button 
                     className="p-3 m-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                    disabled={!draftMessage || isProcessing}
+                    disabled={readOnly || !draftMessage || isProcessing}
+                    title={readOnly ? "Indisponível no modo somente leitura." : undefined}
                     onClick={handleSendDraft}
                   >
                     <Send className="w-5 h-5" />
@@ -236,7 +252,8 @@ export const Central = () => {
             <select 
               value={opp?.stage || 'RASCUNHO'} 
               onChange={(e) => handleStageChange(selectedContact.id, e.target.value as FunnelStage)}
-              disabled={isProcessing}
+              disabled={readOnly || isProcessing}
+              title={readOnly ? "Indisponível no modo somente leitura." : undefined}
               className="w-full p-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"
             >
               <option value="RASCUNHO">Rascunho</option>
@@ -342,7 +359,8 @@ export const Central = () => {
               </button>
               <button 
                 onClick={handleCreateOrder} 
-                disabled={!orderItem.productId || isProcessing}
+                disabled={readOnly || !orderItem.productId || isProcessing}
+                title={readOnly ? "Indisponível no modo somente leitura." : undefined}
                 className="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
               >
                 Confirmar Pedido

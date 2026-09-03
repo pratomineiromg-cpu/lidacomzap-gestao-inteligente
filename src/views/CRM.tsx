@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { changeOpportunityStage } from '../services/Actions';
 import { FunnelStage } from '../domain/types';
 import { format } from 'date-fns';
+import { isReadOnlyMode } from '../config/dataSource';
 
 const STAGES: FunnelStage[] = [
   'RASCUNHO', 'LEAD', 'EM ATENDIMENTO', 'PEDIDO GERADO', 
@@ -14,9 +15,10 @@ export const CRM = () => {
   const { opportunities, contacts } = useAppStore();
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
+  const readOnly = isReadOnlyMode();
 
   const handleStageChange = async (contactId: string, newStage: FunnelStage) => {
-    if (isProcessing) return;
+    if (readOnly || isProcessing) return;
     setIsProcessing(true);
     setActionError(null);
     try {
@@ -79,7 +81,8 @@ export const CRM = () => {
                           className="w-full text-xs p-1.5 border border-slate-200 rounded text-slate-600 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
                           value={opp.stage}
                           onChange={(e) => handleStageChange(contact.id, e.target.value as FunnelStage)}
-                          disabled={isProcessing}
+                          disabled={readOnly || isProcessing}
+                          title={readOnly ? "Indisponível no modo somente leitura." : undefined}
                         >
                           {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>

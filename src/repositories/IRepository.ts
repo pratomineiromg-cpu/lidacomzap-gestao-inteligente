@@ -1,6 +1,7 @@
 import {
   Tenant, User, Contact, Conversation, Message, PendingOutboundMessage,
-  Opportunity, DispatchCampaign, DispatchQueueEntry, DispatchQueueIdentity, Order, OrderItem, TimelineEvent, Product, ID, FunnelStage
+  Opportunity, DispatchCampaign, DispatchQueueEntry, DispatchQueueIdentity, Order, OrderItem, TimelineEvent, Product, ID, FunnelStage,
+  CustomerProfile, CustomerAddress
 } from '../domain/types';
 
 export interface DatabaseState {
@@ -17,6 +18,8 @@ export interface DatabaseState {
   orderItems: OrderItem[];
   timeline: TimelineEvent[];
   products: Product[];
+  customerProfiles: CustomerProfile[];
+  customerAddresses: CustomerAddress[];
 }
 
 export interface AppReadStore {

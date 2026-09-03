@@ -3,11 +3,13 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { AuthService } from '../auth/AuthService';
 import { useAuth } from '../auth/AuthProvider';
+import { isReadOnlyMode } from '../config/dataSource';
 
 export const Layout = () => {
   const { profile } = useAuth();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const readOnly = isReadOnlyMode();
 
   const handleSignOut = async () => {
     if (isSigningOut) return;
@@ -30,7 +32,14 @@ export const Layout = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0">
-          <h1 className="text-lg font-semibold text-slate-800">Operação Piloto</h1>
+          <div className="flex items-center space-x-3">
+            <h1 className="text-lg font-semibold text-slate-800">Operação Piloto</h1>
+            {readOnly && (
+              <span className="text-xs font-medium px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+                Firestore — Somente leitura
+              </span>
+            )}
+          </div>
           <div className="flex items-center space-x-4">
             <div className="text-sm text-slate-500"><span className="font-medium text-slate-700">Restaurante Prato Mineiro</span></div>
             <div className="flex items-center">

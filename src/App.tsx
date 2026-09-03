@@ -14,11 +14,16 @@ import { Pedidos } from './views/Pedidos';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { LoginView } from './views/LoginView';
 import { UnauthorizedView } from './views/UnauthorizedView';
+import { DataSourceGate } from './components/DataSourceGate';
+import { resolveAuthGateState, isAuthorizedToAccessContent } from './components/AuthGate';
 
-const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export { resolveAuthGateState, isAuthorizedToAccessContent };
+
+export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { status } = useAuth();
+  const decision = resolveAuthGateState(status);
 
-  if (status === 'loading' || status === 'authorizing') {
+  if (decision === 'LOADING' || status === 'loading' || status === 'authorizing') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-gray-500">Carregando...</div>
@@ -26,11 +31,11 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     );
   }
 
-  if (status === 'unauthenticated') {
+  if (decision === 'UNAUTHENTICATED' || status === 'unauthenticated') {
     return <LoginView />;
   }
 
-  if (status === 'unauthorized') {
+  if (decision === 'UNAUTHORIZED' || status === 'unauthorized') {
     return <UnauthorizedView />;
   }
 
@@ -45,17 +50,19 @@ export default function App() {
   return (
     <AuthProvider>
       <AuthGate>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="chat" element={<Central />} />
-              <Route path="crm" element={<CRM />} />
-              <Route path="disparador" element={<Disparador />} />
-              <Route path="pedidos" element={<Pedidos />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+        <DataSourceGate>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="chat" element={<Central />} />
+                <Route path="crm" element={<CRM />} />
+                <Route path="disparador" element={<Disparador />} />
+                <Route path="pedidos" element={<Pedidos />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </DataSourceGate>
       </AuthGate>
     </AuthProvider>
   );

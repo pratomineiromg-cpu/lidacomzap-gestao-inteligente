@@ -18,5 +18,7 @@ export const createEmptyDatabaseState = (): DatabaseState => ({
   orders: [],
   orderItems: [],
   timeline: [],
-  products: []
+  products: [],
+  customerProfiles: [],
+  customerAddresses: []
 });
