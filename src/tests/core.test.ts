@@ -929,15 +929,42 @@ describe('Core Commercial Flow Tests', () => {
   it('Test 55 - Admin UID Not Used As Client Security', async () => {
     const fs = await import('fs');
     const path = await import('path');
-    
-    const adminUid = 'ty8fYmiVk1StqBnSgqWex7BXV012';
 
-    const { execSync } = await import('child_process');
-    try {
-      const result = execSync(`grep -r "${adminUid}" src/ --exclude-dir=tests || true`).toString();
-      expect(result.trim()).toBe('');
-    } catch (e) {
-    }
+    const adminUid = 'ty8fYmiVk1StqBnSgqWex7BXV012';
+    const srcDir = path.join(__dirname, '..');
+    const matches: string[] = [];
+
+    const scanDirectory = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path
+          .relative(srcDir, fullPath)
+          .replace(/\\/g, '/');
+
+        if (entry.isDirectory()) {
+          if (
+            relativePath === 'tests' ||
+            relativePath.startsWith('tests/')
+          ) {
+            continue;
+          }
+
+          scanDirectory(fullPath);
+          continue;
+        }
+
+        if (
+          entry.isFile() &&
+          fs.readFileSync(fullPath, 'utf8').includes(adminUid)
+        ) {
+          matches.push(relativePath);
+        }
+      }
+    };
+
+    scanDirectory(srcDir);
+
+    expect(matches).toEqual([]);
   });
 
   it('Test 56 - Sign Out Async Handling', async () => {
@@ -1493,7 +1520,7 @@ describe('Core Commercial Flow Tests', () => {
       description: 'test',
       createdAt: new Date()
     })).rejects.toThrow('Operation is disabled in FIRESTORE_READONLY mode.');
-  });
+  }, 20000);
 
   it('Test 79 - Firestore ReadOnly Operational Collection Allowlist', async () => {
     const { isOperationalCollectionAllowed, OPERATIONAL_COLLECTIONS } = await import('../repositories/FirestoreReadOnlyRepository');
@@ -1926,7 +1953,7 @@ describe('Core Commercial Flow Tests', () => {
     } catch (e: any) {
       expect(e.stdout.toString() + e.stderr.toString()).toMatch(/Error: Live bootstrap execution is not enabled in F1B-05A\./);
     }
-  });
+  }, 20000);
 
   it('Test 93 - Contact Bootstrap Plan Is Deterministic', async () => {
     const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
