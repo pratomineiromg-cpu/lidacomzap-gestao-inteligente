@@ -1755,6 +1755,590 @@ describe('Core Commercial Flow Tests', () => {
     expect(repo3.getState().contacts.length).toBe(1);
     expect(repo3.getState().contacts[0].id).toBe('c-valid');
   });
+
+  it('Test 86 - Contact Bootstrap Rejects Wrong Project', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    expect(() => validateManifest({
+      projectId: 'other-project',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: []
+    })).toThrow(/lidacomzap-gestao-inteligente/);
+  });
+
+  it('Test 87 - Contact Bootstrap Rejects Wrong Tenant', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 'other-tenant',
+      operationId: 'op1',
+      contacts: []
+    })).toThrow(/t-pratomineiro/);
+  });
+
+  it('Test 88 - Invalid Contact Aborts Whole Bootstrap Plan', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    const { executeBootstrapPlanOffline } = await import('../../tools/contact-bootstrap/cli');
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const tempPlanPath = path.resolve(process.cwd(), 'tools/contact-bootstrap/temp-test88.plan.json');
+    if (fs.existsSync(tempPlanPath)) {
+      fs.unlinkSync(tempPlanPath);
+    }
+
+    const invalidManifest = {
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'Valid Name',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        },
+        {
+          id: 'c2',
+          tenantId: 't-pratomineiro',
+          name: 'Invalid missing tags',
+          phone: '31999990002',
+          // @ts-ignore: Intentionally invalid
+          tags: undefined,
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    };
+
+    expect(() => validateManifest(invalidManifest)).toThrow(/tags/);
+    expect(() => executeBootstrapPlanOffline(invalidManifest, tempPlanPath)).toThrow(/tags/);
+    expect(fs.existsSync(tempPlanPath)).toBe(false);
+  });
+
+  it('Test 89 - Duplicate Contact ID Is Rejected', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: [
+        {
+          id: 'c-dup',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        },
+        {
+          id: 'c-dup',
+          tenantId: 't-pratomineiro',
+          name: 'C2',
+          phone: '31999990002',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    })).toThrow(/Duplicate contact ID/);
+  });
+
+  it('Test 90 - Duplicate Canonical Phone Is Rejected', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '(31) 99999-0000',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        },
+        {
+          id: 'c2',
+          tenantId: 't-pratomineiro',
+          name: 'C2',
+          phone: '31999990000',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    })).toThrow(/Duplicate canonical phone/);
+  });
+
+  it('Test 91 - Bootstrap Writes Are Create Only', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    const { generatePlan } = await import('../../tools/contact-bootstrap/planner');
+    const manifest = {
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    };
+    const validated = validateManifest(manifest);
+    const plan = generatePlan(manifest.projectId, manifest.tenantId, validated);
+    expect(plan.writes.length).toBe(1);
+    expect(plan.writes[0].currentDocument).toBeDefined();
+    expect(plan.writes[0].currentDocument.exists).toBe(false);
+  });
+
+  it('Test 92 - Live Bootstrap Apply Is Disabled', async () => {
+    const { assertNoApplyFlag } = await import('../../tools/contact-bootstrap/cli');
+    expect(() => assertNoApplyFlag(['--apply'])).toThrow(
+      'Live bootstrap execution is not enabled in F1B-05A.'
+    );
+    expect(() => assertNoApplyFlag(['--input', 'manifest.json', '--apply'])).toThrow(
+      'Live bootstrap execution is not enabled in F1B-05A.'
+    );
+
+    const { execSync } = require('child_process');
+    try {
+      execSync('npx tsx tools/contact-bootstrap/cli.ts --apply');
+      expect(true).toBe(false);
+    } catch (e: any) {
+      expect(e.stdout.toString() + e.stderr.toString()).toMatch(/Error: Live bootstrap execution is not enabled in F1B-05A\./);
+    }
+  });
+
+  it('Test 93 - Contact Bootstrap Plan Is Deterministic', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    const { generatePlan } = await import('../../tools/contact-bootstrap/planner');
+    const manifest = {
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op1',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: ['A'],
+          notes: 'Test',
+          createdAt: '2026-09-01T12:00:00.000Z',
+          updatedAt: '2026-09-01T12:00:00.000Z'
+        }
+      ]
+    };
+    const validated1 = validateManifest(manifest);
+    const plan1 = generatePlan(manifest.projectId, manifest.tenantId, validated1);
+    
+    const validated2 = validateManifest(manifest);
+    const plan2 = generatePlan(manifest.projectId, manifest.tenantId, validated2);
+
+    expect(JSON.stringify(plan1)).toBe(JSON.stringify(plan2));
+  });
+
+  it('Test 94 - Contact Bootstrap Uses Root Operational Collection', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    const { generatePlan } = await import('../../tools/contact-bootstrap/planner');
+    const { COLLECTIONS } = await import('../repositories/firestore/schema');
+
+    const manifest = {
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-94',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'Cliente Teste 94',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    };
+
+    const validated = validateManifest(manifest);
+    const plan = generatePlan(manifest.projectId, manifest.tenantId, validated);
+    expect(plan.writes.length).toBe(1);
+    expect(plan.writes[0].update.name).toBe(
+      `projects/lidacomzap-gestao-inteligente/databases/(default)/documents/${COLLECTIONS.CONTACTS}/c1`
+    );
+    expect(plan.writes[0].update.name).toBe(
+      'projects/lidacomzap-gestao-inteligente/databases/(default)/documents/contacts/c1'
+    );
+    expect(plan.writes[0].update.name).not.toContain('tenants/');
+  });
+
+  it('Test 95 - Contact Tenant Must Match Bootstrap Manifest', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-95',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 'outro-tenant',
+          name: 'Cliente Divergente',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    })).toThrow(/does not match manifest tenantId/);
+  });
+
+  it('Test 96 - Bootstrap Requires Strict ISO Timestamps', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+
+    // Reject "09/01/2026"
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-96',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '09/01/2026',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    })).toThrow(/non-ISO createdAt timestamp/);
+
+    // Reject "September 1 2026"
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-96',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: 'September 1 2026'
+        }
+      ]
+    })).toThrow(/non-ISO updatedAt timestamp/);
+
+    // Reject date only "2026-09-01"
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-96',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    })).toThrow(/non-ISO createdAt timestamp/);
+
+    // Accept ISO with Z
+    const validWithZ = validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-96',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    });
+    expect(validWithZ.length).toBe(1);
+
+    // Accept ISO with offset -03:00
+    const validWithOffset = validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-96',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T09:00:00-03:00',
+          updatedAt: '2026-09-01T09:00:00-03:00'
+        }
+      ]
+    });
+    expect(validWithOffset.length).toBe(1);
+  });
+
+  it('Test 97 - Duplicate Phone Error Does Not Leak Phone', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+    let caughtError: Error | null = null;
+    try {
+      validateManifest({
+        projectId: 'lidacomzap-gestao-inteligente',
+        tenantId: 't-pratomineiro',
+        operationId: 'op-test-97',
+        contacts: [
+          {
+            id: 'c1',
+            tenantId: 't-pratomineiro',
+            name: 'Cliente Um',
+            phone: '(31) 99999-0000',
+            tags: [],
+            notes: '',
+            createdAt: '2026-09-01T12:00:00Z',
+            updatedAt: '2026-09-01T12:00:00Z'
+          },
+          {
+            id: 'c2',
+            tenantId: 't-pratomineiro',
+            name: 'Cliente Dois',
+            phone: '31999990000',
+            tags: [],
+            notes: '',
+            createdAt: '2026-09-01T12:00:00Z',
+            updatedAt: '2026-09-01T12:00:00Z'
+          }
+        ]
+      });
+    } catch (err: any) {
+      caughtError = err;
+    }
+
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.message).toContain('Duplicate canonical phone');
+    expect(caughtError!.message).toContain('c1');
+    expect(caughtError!.message).toContain('c2');
+    expect(caughtError!.message).not.toContain('31999990000');
+    expect(caughtError!.message).not.toContain('(31) 99999-0000');
+    expect(caughtError!.message).not.toContain('Cliente Um');
+    expect(caughtError!.message).not.toContain('Cliente Dois');
+  });
+
+  it('Test 98 - Bootstrap Requires Operation ID', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+
+    // Missing operationId
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      // @ts-ignore
+      operationId: undefined,
+      contacts: []
+    })).toThrow(/operationId/i);
+
+    // Empty operationId
+    expect(() => validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: '   ',
+      contacts: []
+    })).toThrow(/operationId/i);
+
+    // Valid operationId
+    const res = validateManifest({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-valid-123',
+      contacts: []
+    });
+    expect(res).toEqual([]);
+  });
+
+  it('Test 99 - Planner Cannot Bypass Bootstrap Guards', async () => {
+    const { generatePlan } = await import('../../tools/contact-bootstrap/planner');
+
+    const validContact = {
+      id: 'c1',
+      tenantId: 't-pratomineiro',
+      name: 'Cliente C1',
+      phone: '31999990001',
+      tags: [],
+      notes: '',
+      createdAt: new Date('2026-09-01T12:00:00Z'),
+      updatedAt: new Date('2026-09-01T12:00:00Z')
+    };
+
+    // Wrong projectId
+    expect(() => generatePlan('wrong-project', 't-pratomineiro', [validContact]))
+      .toThrow(/lidacomzap-gestao-inteligente/);
+
+    // Wrong tenantId
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 'wrong-tenant', [validContact]))
+      .toThrow(/t-pratomineiro/);
+
+    // Divergent contact tenantId
+    const divergentContact = { ...validContact, tenantId: 'other-tenant' };
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [divergentContact]))
+      .toThrow(/does not match planner tenantId/);
+  });
+
+  it('Test 100 - Unsafe Firestore Contact ID Is Rejected', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+
+    const createManifestWithId = (id: string) => ({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-100',
+      contacts: [
+        {
+          id,
+          tenantId: 't-pratomineiro',
+          name: 'Cliente',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: '2026-09-01T12:00:00Z',
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    });
+
+    expect(() => validateManifest(createManifestWithId('a/b'))).toThrow(/unsafe or invalid/i);
+    expect(() => validateManifest(createManifestWithId('.'))).toThrow(/unsafe or invalid/i);
+    expect(() => validateManifest(createManifestWithId('..'))).toThrow(/unsafe or invalid/i);
+
+    const valid = validateManifest(createManifestWithId('contact-001'));
+    expect(valid.length).toBe(1);
+    expect(valid[0].id).toBe('contact-001');
+  });
+
+  it('Test 101 - Impossible ISO Calendar Dates Are Rejected', async () => {
+    const { validateManifest } = await import('../../tools/contact-bootstrap/validator');
+
+    const makeManifestWithDate = (dateStr: string) => ({
+      projectId: 'lidacomzap-gestao-inteligente',
+      tenantId: 't-pratomineiro',
+      operationId: 'op-test-101',
+      contacts: [
+        {
+          id: 'c1',
+          tenantId: 't-pratomineiro',
+          name: 'Cliente C1',
+          phone: '31999990001',
+          tags: [],
+          notes: '',
+          createdAt: dateStr,
+          updatedAt: '2026-09-01T12:00:00Z'
+        }
+      ]
+    });
+
+    // 2026-02-31T12:00:00Z -> erro (fevereiro nunca tem 31 dias)
+    expect(() => validateManifest(makeManifestWithDate('2026-02-31T12:00:00Z')))
+      .toThrow(/impossible calendar date/i);
+
+    // 2025-02-29T12:00:00Z -> erro (2025 não é bissexto)
+    expect(() => validateManifest(makeManifestWithDate('2025-02-29T12:00:00Z')))
+      .toThrow(/impossible calendar date/i);
+
+    // 2024-02-29T12:00:00Z -> válido (2024 é bissexto)
+    const leapValid = validateManifest(makeManifestWithDate('2024-02-29T12:00:00Z'));
+    expect(leapValid.length).toBe(1);
+    expect(leapValid[0].createdAt.toISOString()).toBe('2024-02-29T12:00:00.000Z');
+
+    // 2026-04-31T12:00:00Z -> erro (abril só tem 30 dias)
+    expect(() => validateManifest(makeManifestWithDate('2026-04-31T12:00:00Z')))
+      .toThrow(/impossible calendar date/i);
+
+    // 2026-04-30T12:00:00Z -> válido
+    const aprValid = validateManifest(makeManifestWithDate('2026-04-30T12:00:00Z'));
+    expect(aprValid.length).toBe(1);
+    expect(aprValid[0].createdAt.toISOString()).toBe('2026-04-30T12:00:00.000Z');
+  });
+
+  it('Test 102 - Planner Cannot Bypass Contact Validation', async () => {
+    const { generatePlan } = await import('../../tools/contact-bootstrap/planner');
+
+    const validContact = {
+      id: 'c-valid-102',
+      tenantId: 't-pratomineiro',
+      name: 'Cliente Valido 102',
+      phone: '31999990001',
+      tags: ['vip'],
+      notes: 'Notas do cliente',
+      createdAt: new Date('2026-09-01T12:00:00Z'),
+      updatedAt: new Date('2026-09-01T12:00:00Z')
+    };
+
+    // id = "a/b" -> erro
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [
+      { ...validContact, id: 'a/b' }
+    ])).toThrow(/unsafe or invalid firestore document id/i);
+
+    // id = "." -> erro
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [
+      { ...validContact, id: '.' }
+    ])).toThrow(/unsafe or invalid firestore document id/i);
+
+    // id = ".." -> erro
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [
+      { ...validContact, id: '..' }
+    ])).toThrow(/unsafe or invalid firestore document id/i);
+
+    // name = "" -> erro
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [
+      { ...validContact, name: '' }
+    ])).toThrow(/failed domain validation in planner/i);
+
+    // tags inválidas -> erro
+    expect(() => generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [
+      // @ts-ignore
+      { ...validContact, tags: undefined }
+    ])).toThrow(/failed domain validation in planner/i);
+
+    // Contact válido -> plano válido
+    const plan = generatePlan('lidacomzap-gestao-inteligente', 't-pratomineiro', [validContact]);
+    expect(plan.writes.length).toBe(1);
+    expect(plan.writes[0].update.name).toBe(
+      'projects/lidacomzap-gestao-inteligente/databases/(default)/documents/contacts/c-valid-102'
+    );
+    expect(plan.writes[0].currentDocument).toEqual({ exists: false });
+  });
 });
 
 

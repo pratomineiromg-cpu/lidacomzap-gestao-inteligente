@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Tools & Audits
+tools/contact-bootstrap/*.local.json
+tools/contact-bootstrap/*.plan.json
+f1b*-audit*.txt
+f1b*-audit*.zip
