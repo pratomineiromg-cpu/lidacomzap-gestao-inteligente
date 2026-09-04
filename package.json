@@ -12,7 +12,8 @@
     "test": "vitest run",
     "bootstrap:contacts:plan": "tsx tools/contact-bootstrap/cli.ts",
     "contacts:import:preview": "tsx tools/contact-import/cli.ts --mode preview",
-    "contacts:import:manifest": "tsx tools/contact-import/cli.ts --mode manifest"
+    "contacts:import:manifest": "tsx tools/contact-import/cli.ts --mode manifest",
+    "gateway:simulate": "tsx services/channel-gateway/simulator/cli.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
