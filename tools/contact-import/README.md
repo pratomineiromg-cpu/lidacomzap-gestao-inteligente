@@ -32,13 +32,15 @@ npm run contacts:import:preview -- --input tools/contact-import/fixtures/contact
 
 Create a local manifest and optional sanitized report:
 
-```sh
-npm run contacts:import:manifest -- --input tools/contact-import/fixtures/contacts-fixture.csv --source CSV --mapping-file tools/contact-import/fixtures/csv-mapping.json --output tools/contact-import/example.local.json --report tools/contact-import/example.report.json
+```powershell
+$privateDir = Join-Path $env:LOCALAPPDATA 'LidacomZap\private-data\contact-bootstrap'
+npm run contacts:import:manifest -- --input tools/contact-import/fixtures/contacts-fixture.csv --source CSV --mapping-file tools/contact-import/fixtures/csv-mapping.json --output (Join-Path $privateDir 'contacts.local.json') --report (Join-Path $privateDir 'contacts.report.json')
 ```
 
 Manifests containing contacts must use `.local.json`. Sanitized reports must use
-`.report.json`. Both are globally ignored by Git, alongside `.plan.json` output.
-The tool refuses generic JSON output paths for manifests.
+`.report.json`. Real outputs must be written outside the repository. The tool
+refuses generic JSON output paths for manifests and refuses private-data outputs
+inside the Git root.
 
 ## Bootstrap compatibility
 
@@ -50,7 +52,7 @@ deduplication, and create-only planner semantics.
 The next local-only step, when needed, is explicitly separate:
 
 ```sh
-npm run bootstrap:contacts:plan -- --input tools/contact-import/example.local.json --output tools/contact-import/example.plan.json
+npm run bootstrap:contacts:plan -- --input <external-private-path>/contacts.local.json --output <external-private-path>/contacts.plan.json
 ```
 
 This creates a plan only. F1B-05A still rejects `--apply`.

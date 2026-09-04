@@ -179,8 +179,21 @@ describe('F1B-05C privacy-safe local contact import pipeline', () => {
   });
 
   it('requires safe .local.json manifests and .report.json reports', () => {
-    expect(resolveSafeManifestOutputPath('tools/contact-import/output.local.json')).toMatch(/output\.local\.json$/);
-    expect(resolveSafeReportOutputPath('tools/contact-import/output.report.json')).toMatch(/output\.report\.json$/);
+    const externalOutputDir = fs.mkdtempSync(path.join(fs.realpathSync.native(path.dirname(process.cwd())), 'contact-import-output-'));
+    const manifestPath = path.join(externalOutputDir, 'output.local.json');
+    const reportPath = path.join(externalOutputDir, 'output.report.json');
+
+    try {
+      expect(resolveSafeManifestOutputPath(manifestPath)).toMatch(/output\.local\.json$/);
+      expect(resolveSafeReportOutputPath(reportPath)).toMatch(/output\.report\.json$/);
+    } finally {
+      fs.rmSync(externalOutputDir, { recursive: true, force: true });
+    }
+
+    expect(() => resolveSafeManifestOutputPath('tools/contact-import/output.local.json'))
+      .toThrow('UNSAFE_MANIFEST_OUTPUT');
+    expect(() => resolveSafeReportOutputPath('tools/contact-import/output.report.json'))
+      .toThrow('UNSAFE_REPORT_OUTPUT');
     expect(() => resolveSafeManifestOutputPath('tools/contact-import/contacts.json'))
       .toThrow('UNSAFE_MANIFEST_OUTPUT');
     expect(() => resolveSafeReportOutputPath('tools/contact-import/report.json'))

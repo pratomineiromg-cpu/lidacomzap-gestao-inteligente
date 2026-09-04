@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { validateManifest } from './validator';
 import { generatePlan } from './planner';
 import { BootstrapManifest, PlanFile } from './types';
+import { assertPathOutsideRepository, findRepositoryRoot } from '../privacy/privateDataPaths';
 
 export function assertNoApplyFlag(args: string[]): void {
   if (args.includes('--apply')) {
@@ -15,7 +16,9 @@ export function resolveSafePlanOutputPath(outputPath: string): string {
   if (!outputPath || !outputPath.toLowerCase().endsWith('.plan.json')) {
     throw new Error('Bootstrap plan output must use the ignored .plan.json suffix.');
   }
-  return path.resolve(process.cwd(), outputPath);
+  const resolvedOutput = path.resolve(process.cwd(), outputPath);
+  assertPathOutsideRepository(resolvedOutput, findRepositoryRoot());
+  return resolvedOutput;
 }
 
 export function executeBootstrapPlanOffline(manifest: BootstrapManifest, outputPath?: string): PlanFile {
@@ -52,7 +55,7 @@ export function runCli(argv: string[] = process.argv.slice(2)): void {
   }
 
   if (!inputPath) {
-    console.error('Usage: ts-node tools/contact-bootstrap/cli.ts --input <manifest.json> [--output <plan.json>]');
+    console.error('Usage: tsx tools/contact-bootstrap/cli.ts --input <external-manifest.local.json> [--output <external-plan.plan.json>]');
     process.exit(1);
   }
 

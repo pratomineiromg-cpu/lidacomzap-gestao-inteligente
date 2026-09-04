@@ -301,8 +301,10 @@ the sanitized audit shape.
 ## 18. Privacy / PII
 
 - Real `*.local.json` files were not opened.
-- `*.local.json`, `*.plan.json`, and `*.report.json` are ignored by Git.
-- No such file is tracked.
+- Real `*.local.json`, `*.plan.json`, and `*.report.json` files must not live
+  inside the Git repository, even when ignored.
+- No such file is tracked, and F1B-07A adds a workspace privacy check to block
+  private local data files and generated artifacts inside the working tree.
 - Versioned bootstrap/import/gateway fixtures are explicitly synthetic.
 - Contact import reports and gateway audit events are sanitized.
 - Technical and idempotency IDs are opaque and do not derive from addresses.

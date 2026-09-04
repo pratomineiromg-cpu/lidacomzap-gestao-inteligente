@@ -9,7 +9,7 @@ local CSV file
   -> approved canonical phone normalization
   -> validation and deduplication
   -> sanitized preview
-  -> BootstrapManifest (*.local.json)
+  -> external private BootstrapManifest (*.local.json)
   -> existing F1B-05A planner
 ```
 
@@ -42,8 +42,10 @@ emails, addresses, notes, raw rows, or rejected content.
 
 Contact IDs and operation IDs are generated with the existing random UUID helper;
 they do not derive from any imported value. Real manifests must use `.local.json`;
-the tool refuses generic JSON manifest outputs. `.local.json`, `.plan.json`, and
-`.report.json` are ignored globally by Git.
+the tool refuses generic JSON manifest outputs and refuses private-data outputs
+inside the Git root. Real `.local.json`, `.plan.json`, and `.report.json` files
+must be written under the user's local private data root, not inside the
+repository.
 
 ## Integration boundary
 

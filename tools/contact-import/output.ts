@@ -3,12 +3,19 @@ import * as path from 'node:path';
 import { ContactImportError } from './errors';
 import { SanitizedImportPreview } from './types';
 import { BootstrapManifest } from '../contact-bootstrap/types';
+import { assertPathOutsideRepository, findRepositoryRoot } from '../privacy/privateDataPaths';
 
 function resolveOutputPath(outputPath: string, suffix: string, errorCode: 'UNSAFE_MANIFEST_OUTPUT' | 'UNSAFE_REPORT_OUTPUT'): string {
   if (!outputPath || !outputPath.toLowerCase().endsWith(suffix)) {
     throw new ContactImportError(errorCode);
   }
-  return path.resolve(process.cwd(), outputPath);
+  const resolvedOutput = path.resolve(process.cwd(), outputPath);
+  try {
+    assertPathOutsideRepository(resolvedOutput, findRepositoryRoot());
+  } catch {
+    throw new ContactImportError(errorCode);
+  }
+  return resolvedOutput;
 }
 
 export function resolveSafeManifestOutputPath(outputPath: string): string {

@@ -2369,9 +2369,19 @@ describe('Core Commercial Flow Tests', () => {
 
   it('Test 103 - Bootstrap Plan Output Requires Ignored Suffix', async () => {
     const { resolveSafePlanOutputPath } = await import('../../tools/contact-bootstrap/cli');
+    const fs = await import('fs');
+    const path = await import('path');
+    const externalOutputDir = fs.mkdtempSync(path.join(fs.realpathSync.native(path.dirname(process.cwd())), 'bootstrap-plan-output-'));
 
-    expect(resolveSafePlanOutputPath('tools/contact-bootstrap/example.plan.json'))
-      .toMatch(/example\.plan\.json$/);
+    try {
+      expect(resolveSafePlanOutputPath(path.join(externalOutputDir, 'example.plan.json')))
+        .toMatch(/example\.plan\.json$/);
+    } finally {
+      fs.rmSync(externalOutputDir, { recursive: true, force: true });
+    }
+
+    expect(() => resolveSafePlanOutputPath('tools/contact-bootstrap/example.plan.json'))
+      .toThrow('Private customer data outputs must be written outside the repository.');
     expect(() => resolveSafePlanOutputPath('tools/contact-bootstrap/example.json'))
       .toThrow('must use the ignored .plan.json suffix');
   });
