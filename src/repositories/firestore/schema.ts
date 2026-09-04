@@ -12,7 +12,9 @@ export const COLLECTIONS = {
   ORDER_ITEMS: 'orderItems',
   TIMELINE_EVENTS: 'timelineEvents',
   CUSTOMER_PROFILES: 'customerProfiles',
-  CUSTOMER_ADDRESSES: 'customerAddresses'
+  CUSTOMER_ADDRESSES: 'customerAddresses',
+  /** Domain contract only in F1B-05B; it is not an active operational collection. */
+  CONTACT_CHANNEL_IDENTITIES: 'contactChannelIdentities'
 } as const;
 
 // Path generators
@@ -30,4 +32,12 @@ export const getDispatchQueuePath = (campaignId: string, contactId: string) => {
 
 export const getPendingOutboundMessagePath = (queueEntryId: string) => {
   return `${COLLECTIONS.PENDING_OUTBOUND_MESSAGES}/${queueEntryId}`;
+};
+
+/**
+ * Future identities use an opaque LidacomZap ID (for example createId('identity'))
+ * as the document key. Never use a channel address, phone, name, or email here.
+ */
+export const getContactChannelIdentityPath = (identityId: string) => {
+  return `${COLLECTIONS.CONTACT_CHANNEL_IDENTITIES}/${identityId}`;
 };

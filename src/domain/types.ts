@@ -1,3 +1,40 @@
+import type {
+  ChannelProvider,
+  CommunicationChannel,
+  ContactChannelIdentity,
+  ContactImportReport,
+  ContactImportSource,
+  MessageContentType,
+  MessageOriginSurface,
+  OrderChannel,
+  RoutingMode
+} from './omnichannel';
+
+export type {
+  CapabilitySource,
+  ChannelAvailability,
+  ChannelCapability,
+  ChannelEligibility,
+  ChannelProvider,
+  CommunicationChannel,
+  ContactChannelIdentity,
+  ContactImportReport,
+  ContactImportSource,
+  ContactImportTechnicalReason,
+  ContactImportTechnicalReasonCode,
+  CreateContactChannelIdentityInput,
+  CreateProviderCapabilitiesInput,
+  EligibilitySource,
+  ExternalMessageReference,
+  MessageContentType,
+  MessageOriginSurface,
+  OrderChannel,
+  ProviderCapabilities,
+  RoutingDecision,
+  RoutingMode,
+  RoutingReason
+} from './omnichannel';
+
 export type ID = string;
 
 export interface Tenant {
@@ -28,10 +65,33 @@ export interface Contact {
   updatedAt: Date;
 }
 
+/**
+ * A source adapter produces candidates; the contact remains a CRM person and
+ * identities stay separate so one person can be present on multiple channels.
+ */
+export interface ContactImportCandidate {
+  contact: Pick<Contact, 'tenantId' | 'name' | 'phone' | 'avatar' | 'tags' | 'notes'>;
+  identities: ContactChannelIdentity[];
+}
+
+export interface ContactImportPreview {
+  candidates: ContactImportCandidate[];
+  report: ContactImportReport;
+}
+
+/** Offline parsing contract only. Source acquisition belongs to a future adapter. */
+export interface ContactImporter {
+  readonly source: ContactImportSource;
+  preview(input: unknown): ContactImportPreview;
+}
+
 export interface Conversation {
   id: ID;
   tenantId: ID;
   contactId: ID;
+  channel?: CommunicationChannel;
+  provider?: ChannelProvider;
+  externalConversationId?: string;
   unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
@@ -44,6 +104,11 @@ export interface Message {
   conversationId: ID;
   sender: MessageSender;
   content: string;
+  channel?: CommunicationChannel;
+  provider?: ChannelProvider;
+  providerMessageId?: string;
+  originSurface?: MessageOriginSurface;
+  contentType?: MessageContentType;
   createdAt: Date;
 }
 
@@ -84,6 +149,17 @@ export interface DispatchCampaign {
   name: string;
   template: string;
   dailyLimit: number;
+  /** Absent means the legacy campaign has not received a routing policy yet. */
+  routingMode?: RoutingMode;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Commercial planning is intentionally separate from a concrete dispatch operation. */
+export interface MarketingCampaign {
+  id: ID;
+  tenantId: ID;
+  name: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -110,7 +186,6 @@ export interface DispatchQueueEntry {
 }
 
 export type OrderEntryPoint = 'DIGITAL_MENU' | 'CHAT' | 'POS' | 'TABLE_QR';
-export type CommunicationChannel = 'WHATSAPP' | 'RCS' | 'NONE';
 export type OrderCreationMode = 'CUSTOMER' | 'HUMAN_OPERATOR' | 'AI_ASSISTED' | 'AUTOMATION';
 
 export type OrderStatus = 'CREATED' | 'PAID' | 'CANCELED';
@@ -120,7 +195,7 @@ export interface Order {
   tenantId: ID;
   contactId: ID;
   entryPoint: OrderEntryPoint;
-  channel: CommunicationChannel;
+  channel: OrderChannel;
   creationMode: OrderCreationMode;
   total: number;
   status: OrderStatus;

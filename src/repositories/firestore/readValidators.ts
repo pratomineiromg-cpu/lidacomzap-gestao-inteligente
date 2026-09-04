@@ -12,7 +12,19 @@ import {
   PendingOutboundMessage,
   Order,
   OrderEntryPoint,
+  OrderChannel,
   CommunicationChannel,
+  ChannelProvider,
+  ChannelAvailability,
+  CapabilitySource,
+  ChannelEligibility,
+  EligibilitySource,
+  ContactChannelIdentity,
+  ProviderCapabilities,
+  ChannelCapability,
+  RoutingMode,
+  MessageOriginSurface,
+  MessageContentType,
   OrderCreationMode,
   OrderStatus,
   OrderItem,
@@ -112,6 +124,20 @@ export function requireEnum<T extends string>(value: any, allowed: readonly T[],
   return value as T;
 }
 
+export function optionalEnum<T extends string>(value: any, allowed: readonly T[], col: string, docId: string, field: string): T | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return requireEnum<T>(value, allowed, col, docId, field);
+}
+
+export function requireEnumArray<T extends string>(value: any, allowed: readonly T[], col: string, docId: string, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid field "${field}" in collection "${col}" doc "${docId}": expected array.`);
+  }
+  return value.map((item, index) => requireEnum<T>(item, allowed, col, docId, `${field}[${index}]`));
+}
+
 export const ALLOWED_FUNNEL_STAGES: readonly FunnelStage[] = [
   'RASCUNHO',
   'LEAD',
@@ -128,7 +154,61 @@ export const ALLOWED_FUNNEL_STAGES: readonly FunnelStage[] = [
 export const ALLOWED_MESSAGE_SENDERS: readonly MessageSender[] = ['USER', 'CONTACT', 'SYSTEM'];
 export const ALLOWED_QUEUE_STATUSES: readonly DispatchQueueStatus[] = ['QUEUED', 'DRAFT_PREPARED', 'SENT', 'REPLIED', 'FAILED', 'SKIPPED'];
 export const ALLOWED_ORDER_ENTRY_POINTS: readonly OrderEntryPoint[] = ['DIGITAL_MENU', 'CHAT', 'POS', 'TABLE_QR'];
-export const ALLOWED_ORDER_CHANNELS: readonly CommunicationChannel[] = ['WHATSAPP', 'RCS', 'NONE'];
+export const ALLOWED_COMMUNICATION_CHANNELS: readonly CommunicationChannel[] = ['WHATSAPP', 'RCS'];
+export const ALLOWED_ORDER_CHANNELS: readonly OrderChannel[] = ['WHATSAPP', 'RCS', 'NONE'];
+export const ALLOWED_CHANNEL_PROVIDERS: readonly ChannelProvider[] = [
+  'WHATSAPP_META_OFFICIAL',
+  'WHATSAPP_EVOLUTION_OPTIONAL',
+  'RCS_GOOGLE'
+];
+export const ALLOWED_CHANNEL_AVAILABILITY: readonly ChannelAvailability[] = ['UNKNOWN', 'KNOWN_AVAILABLE', 'KNOWN_UNAVAILABLE'];
+export const ALLOWED_CAPABILITY_SOURCES: readonly CapabilitySource[] = [
+  'WHATSAPP_SYNC',
+  'RCS_CAPABILITY_CHECK',
+  'PROVIDER_EVENT',
+  'DELIVERY_RESULT',
+  'IMPORT',
+  'MANUAL',
+  'UNKNOWN'
+];
+export const ALLOWED_CHANNEL_ELIGIBILITY: readonly ChannelEligibility[] = ['UNKNOWN', 'ELIGIBLE', 'INELIGIBLE'];
+export const ALLOWED_ELIGIBILITY_SOURCES: readonly EligibilitySource[] = [
+  'POLICY',
+  'PROVIDER',
+  'CONSENT',
+  'CONFIGURATION',
+  'MANUAL',
+  'UNKNOWN'
+];
+export const ALLOWED_CHANNEL_CAPABILITIES: readonly ChannelCapability[] = [
+  'TEXT',
+  'IMAGE',
+  'DOCUMENT',
+  'AUDIO',
+  'TEMPLATE',
+  'RICH_MEDIA',
+  'DELIVERY_RECEIPT',
+  'READ_RECEIPT',
+  'MESSAGE_ECHO',
+  'CONTACT_SYNC',
+  'PRESENCE',
+  'CATALOG'
+];
+export const ALLOWED_ROUTING_MODES: readonly RoutingMode[] = ['WHATSAPP', 'RCS', 'BOTH_SMART'];
+export const ALLOWED_MESSAGE_ORIGIN_SURFACES: readonly MessageOriginSurface[] = [
+  'PLATFORM',
+  'WHATSAPP_BUSINESS_APP',
+  'PROVIDER',
+  'CUSTOMER'
+];
+export const ALLOWED_MESSAGE_CONTENT_TYPES: readonly MessageContentType[] = [
+  'TEXT',
+  'IMAGE',
+  'AUDIO',
+  'DOCUMENT',
+  'SYSTEM',
+  'RICH_CONTENT'
+];
 export const ALLOWED_ORDER_CREATION_MODES: readonly OrderCreationMode[] = ['CUSTOMER', 'HUMAN_OPERATOR', 'AI_ASSISTED', 'AUTOMATION'];
 export const ALLOWED_ORDER_STATUSES: readonly OrderStatus[] = ['CREATED', 'PAID', 'CANCELED'];
 
@@ -147,12 +227,60 @@ export function validateContact(d: any): Contact {
   };
 }
 
+export function validateContactChannelIdentity(d: any): ContactChannelIdentity {
+  const docId = String(d?._docId || d?.id || 'unknown');
+  const provider = optionalEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'contactChannelIdentities', docId, 'provider');
+  const providerIdentityId = optionalString(d?.providerIdentityId, 'contactChannelIdentities', docId, 'providerIdentityId');
+  if (providerIdentityId && !provider) {
+    throw new Error(`Invalid field "providerIdentityId" in collection "contactChannelIdentities" doc "${docId}": provider is required when providerIdentityId is present.`);
+  }
+  return {
+    id: requireString(d?.id, 'contactChannelIdentities', docId, 'id'),
+    tenantId: requireString(d?.tenantId, 'contactChannelIdentities', docId, 'tenantId'),
+    contactId: requireString(d?.contactId, 'contactChannelIdentities', docId, 'contactId'),
+    channel: requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'contactChannelIdentities', docId, 'channel'),
+    provider,
+    address: requireString(d?.address, 'contactChannelIdentities', docId, 'address'),
+    availability: requireEnum<ChannelAvailability>(d?.availability, ALLOWED_CHANNEL_AVAILABILITY, 'contactChannelIdentities', docId, 'availability'),
+    availabilitySource: requireEnum<CapabilitySource>(d?.availabilitySource, ALLOWED_CAPABILITY_SOURCES, 'contactChannelIdentities', docId, 'availabilitySource'),
+    eligibility: requireEnum<ChannelEligibility>(d?.eligibility, ALLOWED_CHANNEL_ELIGIBILITY, 'contactChannelIdentities', docId, 'eligibility'),
+    eligibilitySource: optionalEnum<EligibilitySource>(d?.eligibilitySource, ALLOWED_ELIGIBILITY_SOURCES, 'contactChannelIdentities', docId, 'eligibilitySource'),
+    providerIdentityId,
+    lastCapabilityCheckAt: optionalDate(d?.lastCapabilityCheckAt, 'contactChannelIdentities', docId, 'lastCapabilityCheckAt'),
+    createdAt: requireDate(d?.createdAt, 'contactChannelIdentities', docId, 'createdAt'),
+    updatedAt: requireDate(d?.updatedAt, 'contactChannelIdentities', docId, 'updatedAt')
+  };
+}
+
+export function validateProviderCapabilities(d: any): ProviderCapabilities {
+  const docId = String(d?._docId || d?.provider || 'unknown');
+  return {
+    channel: requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'providerCapabilities', docId, 'channel'),
+    provider: requireEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'providerCapabilities', docId, 'provider'),
+    capabilities: requireEnumArray<ChannelCapability>(d?.capabilities, ALLOWED_CHANNEL_CAPABILITIES, 'providerCapabilities', docId, 'capabilities'),
+    observedAt: requireDate(d?.observedAt, 'providerCapabilities', docId, 'observedAt'),
+    source: requireEnum<CapabilitySource>(d?.source, ALLOWED_CAPABILITY_SOURCES, 'providerCapabilities', docId, 'source')
+  };
+}
+
 export function validateConversation(d: any): Conversation {
   const docId = String(d?._docId || d?.id || 'unknown');
+  const channel = optionalEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'conversations', docId, 'channel');
+  const provider = optionalEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'conversations', docId, 'provider');
+  const externalConversationId = optionalString(d?.externalConversationId, 'conversations', docId, 'externalConversationId');
+  if (provider && !channel) {
+    throw new Error(`Invalid field "provider" in collection "conversations" doc "${docId}": channel is required when provider is present.`);
+  }
+  if (externalConversationId && !provider) {
+    throw new Error(`Invalid field "externalConversationId" in collection "conversations" doc "${docId}": provider is required when externalConversationId is present.`);
+  }
   return {
     id: requireString(d?.id, 'conversations', docId, 'id'),
     tenantId: requireString(d?.tenantId, 'conversations', docId, 'tenantId'),
     contactId: requireString(d?.contactId, 'conversations', docId, 'contactId'),
+    channel,
+    provider,
+    externalConversationId,
     unreadCount: requireFiniteNumber(d?.unreadCount, 'conversations', docId, 'unreadCount'),
     createdAt: requireDate(d?.createdAt, 'conversations', docId, 'createdAt'),
     updatedAt: requireDate(d?.updatedAt, 'conversations', docId, 'updatedAt')
@@ -161,11 +289,25 @@ export function validateConversation(d: any): Conversation {
 
 export function validateMessage(d: any): Message {
   const docId = String(d?._docId || d?.id || 'unknown');
+  const channel = optionalEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'messages', docId, 'channel');
+  const provider = optionalEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'messages', docId, 'provider');
+  const providerMessageId = optionalString(d?.providerMessageId, 'messages', docId, 'providerMessageId');
+  if (provider && !channel) {
+    throw new Error(`Invalid field "provider" in collection "messages" doc "${docId}": channel is required when provider is present.`);
+  }
+  if (providerMessageId && !provider) {
+    throw new Error(`Invalid field "providerMessageId" in collection "messages" doc "${docId}": provider is required when providerMessageId is present.`);
+  }
   return {
     id: requireString(d?.id, 'messages', docId, 'id'),
     conversationId: requireString(d?.conversationId, 'messages', docId, 'conversationId'),
     sender: requireEnum<MessageSender>(d?.sender, ALLOWED_MESSAGE_SENDERS, 'messages', docId, 'sender'),
     content: requireString(d?.content, 'messages', docId, 'content'),
+    channel,
+    provider,
+    providerMessageId,
+    originSurface: optionalEnum<MessageOriginSurface>(d?.originSurface, ALLOWED_MESSAGE_ORIGIN_SURFACES, 'messages', docId, 'originSurface'),
+    contentType: optionalEnum<MessageContentType>(d?.contentType, ALLOWED_MESSAGE_CONTENT_TYPES, 'messages', docId, 'contentType'),
     createdAt: requireDate(d?.createdAt, 'messages', docId, 'createdAt')
   };
 }
@@ -190,6 +332,7 @@ export function validateDispatchCampaign(d: any): DispatchCampaign {
     name: requireString(d?.name, 'dispatchCampaigns', docId, 'name'),
     template: requireString(d?.template, 'dispatchCampaigns', docId, 'template'),
     dailyLimit: requireFiniteNumber(d?.dailyLimit, 'dispatchCampaigns', docId, 'dailyLimit'),
+    routingMode: optionalEnum<RoutingMode>(d?.routingMode, ALLOWED_ROUTING_MODES, 'dispatchCampaigns', docId, 'routingMode'),
     createdAt: requireDate(d?.createdAt, 'dispatchCampaigns', docId, 'createdAt'),
     updatedAt: requireDate(d?.updatedAt, 'dispatchCampaigns', docId, 'updatedAt')
   };
@@ -231,7 +374,7 @@ export function validateOrder(d: any): Order {
     tenantId: requireString(d?.tenantId, 'orders', docId, 'tenantId'),
     contactId: requireString(d?.contactId, 'orders', docId, 'contactId'),
     entryPoint: requireEnum<OrderEntryPoint>(d?.entryPoint, ALLOWED_ORDER_ENTRY_POINTS, 'orders', docId, 'entryPoint'),
-    channel: requireEnum<CommunicationChannel>(d?.channel, ALLOWED_ORDER_CHANNELS, 'orders', docId, 'channel'),
+    channel: requireEnum<OrderChannel>(d?.channel, ALLOWED_ORDER_CHANNELS, 'orders', docId, 'channel'),
     creationMode: requireEnum<OrderCreationMode>(d?.creationMode, ALLOWED_ORDER_CREATION_MODES, 'orders', docId, 'creationMode'),
     total: requireFiniteNumber(d?.total, 'orders', docId, 'total'),
     status: requireEnum<OrderStatus>(d?.status, ALLOWED_ORDER_STATUSES, 'orders', docId, 'status'),
