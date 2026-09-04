@@ -2366,6 +2366,15 @@ describe('Core Commercial Flow Tests', () => {
     );
     expect(plan.writes[0].currentDocument).toEqual({ exists: false });
   });
+
+  it('Test 103 - Bootstrap Plan Output Requires Ignored Suffix', async () => {
+    const { resolveSafePlanOutputPath } = await import('../../tools/contact-bootstrap/cli');
+
+    expect(resolveSafePlanOutputPath('tools/contact-bootstrap/example.plan.json'))
+      .toMatch(/example\.plan\.json$/);
+    expect(() => resolveSafePlanOutputPath('tools/contact-bootstrap/example.json'))
+      .toThrow('must use the ignored .plan.json suffix');
+  });
 });
 
 

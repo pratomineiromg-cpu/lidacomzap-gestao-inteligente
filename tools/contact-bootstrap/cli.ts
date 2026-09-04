@@ -11,12 +11,19 @@ export function assertNoApplyFlag(args: string[]): void {
   }
 }
 
+export function resolveSafePlanOutputPath(outputPath: string): string {
+  if (!outputPath || !outputPath.toLowerCase().endsWith('.plan.json')) {
+    throw new Error('Bootstrap plan output must use the ignored .plan.json suffix.');
+  }
+  return path.resolve(process.cwd(), outputPath);
+}
+
 export function executeBootstrapPlanOffline(manifest: BootstrapManifest, outputPath?: string): PlanFile {
   const validatedContacts = validateManifest(manifest);
   const plan = generatePlan(manifest.projectId, manifest.tenantId, validatedContacts);
   
   if (outputPath) {
-    const resolvedOutput = path.resolve(process.cwd(), outputPath);
+    const resolvedOutput = resolveSafePlanOutputPath(outputPath);
     fs.writeFileSync(resolvedOutput, JSON.stringify(plan, null, 2), 'utf-8');
   }
   
@@ -76,7 +83,7 @@ export function runCli(argv: string[] = process.argv.slice(2)): void {
 
   console.log(`Validation successful for ${plan.writes.length} contacts.`);
   if (outputPath) {
-    const resolvedOutput = path.resolve(process.cwd(), outputPath);
+    const resolvedOutput = resolveSafePlanOutputPath(outputPath);
     console.log(`Plan written to: ${resolvedOutput}`);
   } else {
     console.log('No output path specified. Plan generated successfully in memory.');

@@ -17,4 +17,11 @@ describe('Architectural Integrity Tests', () => {
     expect(actionsContent).not.toMatch(/\.update\s*\(/);
     expect(eventEngineContent).not.toMatch(/\.update\s*\(/);
   });
+
+  it('keeps runtime event logs free from message and order payloads', () => {
+    const eventEngineContent = fs.readFileSync(path.join(__dirname, '../events/EventEngine.ts'), 'utf-8');
+
+    expect(eventEngineContent).toContain("console.log('[EventEngine]', event.type);");
+    expect(eventEngineContent).not.toMatch(/console\.log\([^)]*,\s*event\s*\)/);
+  });
 });

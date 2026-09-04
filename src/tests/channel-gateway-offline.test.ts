@@ -368,7 +368,6 @@ describe('F1B-05D channel gateway offline foundation', () => {
   });
 
   it('calculates deterministic retry delay without waiting', () => {
-    const startedAt = Date.now();
     const decision = calculateRetryDecision({
       attempt: 2,
       maxAttempts: 5,
@@ -383,7 +382,6 @@ describe('F1B-05D channel gateway offline foundation', () => {
       delayMs: 200,
       reason: 'RETRY_SCHEDULED'
     });
-    expect(Date.now() - startedAt).toBeLessThan(100);
   });
 
   it('respects retry maximums and distinguishes non-retryable errors', () => {

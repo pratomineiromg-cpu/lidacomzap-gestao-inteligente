@@ -153,6 +153,48 @@ describe('Omnichannel Contact and Messaging Foundation', () => {
     expect(hasKnownProviderCapability(rcs, 'RICH_MEDIA')).toBe(true);
   });
 
+  it('rejects impossible channel and provider pairs at domain and Firestore boundaries', () => {
+    expect(() => identity({ channel: 'RCS', provider: 'WHATSAPP_META_OFFICIAL' }))
+      .toThrow('is not compatible with channel');
+    expect(() => createProviderCapabilities({
+      channel: 'WHATSAPP',
+      provider: 'RCS_GOOGLE',
+      observedAt: fixedAt
+    })).toThrow('is not compatible with channel');
+
+    expect(() => validateContactChannelIdentity({
+      ...identity({ provider: undefined }),
+      channel: 'WHATSAPP',
+      provider: 'RCS_GOOGLE'
+    })).toThrow('provider is incompatible with channel');
+    expect(() => validateProviderCapabilities({
+      channel: 'RCS',
+      provider: 'WHATSAPP_EVOLUTION_OPTIONAL',
+      capabilities: [],
+      observedAt: fixedAt,
+      source: 'MANUAL'
+    })).toThrow('provider is incompatible with channel');
+    expect(() => validateConversation({
+      id: 'conversation-opaque-invalid',
+      tenantId: 'tenant-opaque-001',
+      contactId: 'contact-opaque-001',
+      channel: 'RCS',
+      provider: 'WHATSAPP_META_OFFICIAL',
+      unreadCount: 0,
+      createdAt: fixedAt,
+      updatedAt: fixedAt
+    })).toThrow('provider is incompatible with channel');
+    expect(() => validateMessage({
+      id: 'message-opaque-invalid-provider',
+      conversationId: 'conversation-opaque-001',
+      sender: 'CONTACT',
+      content: 'fixture content',
+      channel: 'WHATSAPP',
+      provider: 'RCS_GOOGLE',
+      createdAt: fixedAt
+    })).toThrow('provider is incompatible with channel');
+  });
+
   it('does not route UNKNOWN availability or eligibility', () => {
     const result = decideRouting({
       contactId: 'contact-opaque-001',

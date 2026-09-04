@@ -14,7 +14,7 @@ export type AppEvent =
   | { type: 'ORDER_CREATED', order: Order, contactId: string };
 
 export const emitEvent = async (event: AppEvent) => {
-  console.log('[EventEngine]', event.type, event);
+  console.log('[EventEngine]', event.type);
   
   const now = new Date();
   

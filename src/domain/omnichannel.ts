@@ -15,6 +15,16 @@ export type ChannelProvider =
   | 'WHATSAPP_EVOLUTION_OPTIONAL'
   | 'RCS_GOOGLE';
 
+export function isChannelProviderCompatible(
+  channel: CommunicationChannel,
+  provider: ChannelProvider
+): boolean {
+  if (channel === 'RCS') {
+    return provider === 'RCS_GOOGLE';
+  }
+  return provider === 'WHATSAPP_META_OFFICIAL' || provider === 'WHATSAPP_EVOLUTION_OPTIONAL';
+}
+
 export type ChannelAvailability =
   | 'UNKNOWN'
   | 'KNOWN_AVAILABLE'
@@ -83,6 +93,9 @@ export interface CreateContactChannelIdentityInput {
 export function createContactChannelIdentity(
   input: CreateContactChannelIdentityInput
 ): ContactChannelIdentity {
+  if (input.provider && !isChannelProviderCompatible(input.channel, input.provider)) {
+    throw new Error(`Provider ${input.provider} is not compatible with channel ${input.channel}.`);
+  }
   return {
     ...input,
     availability: input.availability ?? 'UNKNOWN',
@@ -126,6 +139,9 @@ export interface CreateProviderCapabilitiesInput {
 export function createProviderCapabilities(
   input: CreateProviderCapabilitiesInput
 ): ProviderCapabilities {
+  if (!isChannelProviderCompatible(input.channel, input.provider)) {
+    throw new Error(`Provider ${input.provider} is not compatible with channel ${input.channel}.`);
+  }
   return {
     ...input,
     capabilities: input.capabilities ?? [],

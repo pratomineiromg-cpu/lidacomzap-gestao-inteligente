@@ -8,6 +8,7 @@ Ferramenta OFFLINE para preparar, validar e auditar o primeiro bootstrap real de
 - Não envia dados para o Firestore de verdade nesta fase (F1B-05A).
 - PII limits: logs não mostram telefones ou nomes.
 - Arquivos `.local.json` e `.plan.json` são ignorados no Git.
+- O CLI recusa saída de plano sem o sufixo ignorado `.plan.json`.
 
 ## Como usar
 Para planejar e validar usando o arquivo de exemplo:

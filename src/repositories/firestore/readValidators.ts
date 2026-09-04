@@ -32,6 +32,7 @@ import {
   CustomerProfile,
   CustomerAddress
 } from '../../domain/types';
+import { isChannelProviderCompatible } from '../../domain/omnichannel';
 
 export function requireString(value: any, col: string, docId: string, field: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -229,8 +230,12 @@ export function validateContact(d: any): Contact {
 
 export function validateContactChannelIdentity(d: any): ContactChannelIdentity {
   const docId = String(d?._docId || d?.id || 'unknown');
+  const channel = requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'contactChannelIdentities', docId, 'channel');
   const provider = optionalEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'contactChannelIdentities', docId, 'provider');
   const providerIdentityId = optionalString(d?.providerIdentityId, 'contactChannelIdentities', docId, 'providerIdentityId');
+  if (provider && !isChannelProviderCompatible(channel, provider)) {
+    throw new Error(`Invalid field "provider" in collection "contactChannelIdentities" doc "${docId}": provider is incompatible with channel.`);
+  }
   if (providerIdentityId && !provider) {
     throw new Error(`Invalid field "providerIdentityId" in collection "contactChannelIdentities" doc "${docId}": provider is required when providerIdentityId is present.`);
   }
@@ -238,7 +243,7 @@ export function validateContactChannelIdentity(d: any): ContactChannelIdentity {
     id: requireString(d?.id, 'contactChannelIdentities', docId, 'id'),
     tenantId: requireString(d?.tenantId, 'contactChannelIdentities', docId, 'tenantId'),
     contactId: requireString(d?.contactId, 'contactChannelIdentities', docId, 'contactId'),
-    channel: requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'contactChannelIdentities', docId, 'channel'),
+    channel,
     provider,
     address: requireString(d?.address, 'contactChannelIdentities', docId, 'address'),
     availability: requireEnum<ChannelAvailability>(d?.availability, ALLOWED_CHANNEL_AVAILABILITY, 'contactChannelIdentities', docId, 'availability'),
@@ -254,9 +259,14 @@ export function validateContactChannelIdentity(d: any): ContactChannelIdentity {
 
 export function validateProviderCapabilities(d: any): ProviderCapabilities {
   const docId = String(d?._docId || d?.provider || 'unknown');
+  const channel = requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'providerCapabilities', docId, 'channel');
+  const provider = requireEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'providerCapabilities', docId, 'provider');
+  if (!isChannelProviderCompatible(channel, provider)) {
+    throw new Error(`Invalid field "provider" in collection "providerCapabilities" doc "${docId}": provider is incompatible with channel.`);
+  }
   return {
-    channel: requireEnum<CommunicationChannel>(d?.channel, ALLOWED_COMMUNICATION_CHANNELS, 'providerCapabilities', docId, 'channel'),
-    provider: requireEnum<ChannelProvider>(d?.provider, ALLOWED_CHANNEL_PROVIDERS, 'providerCapabilities', docId, 'provider'),
+    channel,
+    provider,
     capabilities: requireEnumArray<ChannelCapability>(d?.capabilities, ALLOWED_CHANNEL_CAPABILITIES, 'providerCapabilities', docId, 'capabilities'),
     observedAt: requireDate(d?.observedAt, 'providerCapabilities', docId, 'observedAt'),
     source: requireEnum<CapabilitySource>(d?.source, ALLOWED_CAPABILITY_SOURCES, 'providerCapabilities', docId, 'source')
@@ -270,6 +280,9 @@ export function validateConversation(d: any): Conversation {
   const externalConversationId = optionalString(d?.externalConversationId, 'conversations', docId, 'externalConversationId');
   if (provider && !channel) {
     throw new Error(`Invalid field "provider" in collection "conversations" doc "${docId}": channel is required when provider is present.`);
+  }
+  if (channel && provider && !isChannelProviderCompatible(channel, provider)) {
+    throw new Error(`Invalid field "provider" in collection "conversations" doc "${docId}": provider is incompatible with channel.`);
   }
   if (externalConversationId && !provider) {
     throw new Error(`Invalid field "externalConversationId" in collection "conversations" doc "${docId}": provider is required when externalConversationId is present.`);
@@ -294,6 +307,9 @@ export function validateMessage(d: any): Message {
   const providerMessageId = optionalString(d?.providerMessageId, 'messages', docId, 'providerMessageId');
   if (provider && !channel) {
     throw new Error(`Invalid field "provider" in collection "messages" doc "${docId}": channel is required when provider is present.`);
+  }
+  if (channel && provider && !isChannelProviderCompatible(channel, provider)) {
+    throw new Error(`Invalid field "provider" in collection "messages" doc "${docId}": provider is incompatible with channel.`);
   }
   if (providerMessageId && !provider) {
     throw new Error(`Invalid field "providerMessageId" in collection "messages" doc "${docId}": provider is required when providerMessageId is present.`);
