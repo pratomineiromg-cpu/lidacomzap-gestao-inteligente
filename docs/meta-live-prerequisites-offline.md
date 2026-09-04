@@ -193,9 +193,11 @@ are semantic references and test tools only.
 ## 28. Meta Offline Adapter
 
 The Meta offline adapter validates the explicit internal fixture contract and
-normalizes supported synthetic events. The Meta live decoder deliberately fails
-with `OFFICIAL_PROTOCOL_NOT_VERIFIED` even after a test authenticator returns
-verified.
+normalizes supported synthetic events. F1B-08 adds a separate strict offline
+decoder for the verified official envelope and supported synthetic official
+message/status examples. The pending decoder still deliberately fails with
+`OFFICIAL_PROTOCOL_NOT_VERIFIED` when a caller chooses the unresolved live
+protocol boundary.
 
 ## 29. RCS Regression
 
@@ -210,8 +212,50 @@ transport or provider behavior was added.
 ## 31. Official Meta Protocol Verification
 
 **PENDING OFFICIAL SPEC VERIFICATION.** Signature header names and encoding,
-algorithm, challenge fields, live payload shape, coexistence behavior, echo,
-sync, presence, catalog, and account-specific capabilities were not assumed.
+algorithm, challenge fields, live payload details outside the verified envelope
+subset, coexistence behavior, echo, sync, presence, catalog, and
+account-specific capabilities were not assumed.
+
+## 31A. Official Protocol Evidence Added in F1B-08
+
+F1B-08 records official-source provenance in
+`docs/meta-official-protocol-evidence.md` and adds an offline strict decoder for
+the verified generic WhatsApp Business Platform webhook envelope:
+
+- `object = whatsapp_business_account`
+- non-empty `entry` array
+- `entry[].id`
+- non-empty `entry[].changes`
+- `changes[].field = messages`
+- `changes[].value.messaging_product = whatsapp`
+- `value.metadata.display_phone_number`
+- `value.metadata.phone_number_id`
+- message/status event foundation under the `messages` field
+- status values `sent`, `delivered`, `read`, and `failed`
+
+The decoder remains offline and does not call Graph API, Meta, WhatsApp, RCS,
+Evolution, Firebase, Firestore, Hostinger, or any provider runtime. Unsupported
+official event shapes are classified fail-safe instead of being silently
+accepted.
+
+VERIFIED OFFICIAL:
+
+- WABA webhook delivery requires app subscription to the WABA.
+- Future public webhook ingress requires HTTPS and a valid TLS certificate.
+- Alternate callback URL configuration uses the `verify_token` concept.
+
+PENDING:
+
+- Exact POST webhook signature header, signature algorithm, and canonicalization.
+- Exact GET challenge protocol and query keys.
+- Coexistence, message echo, contact sync, history sync, presence, catalog, and
+  unverified provider limits.
+
+Generic crypto primitive status: READY.
+
+Meta POST signature protocol: PENDING OFFICIAL SPEC VERIFICATION.
+
+WhatsApp Meta Official live status: NOT_READY.
 
 ## 32. Remaining Live Blockers
 
@@ -223,19 +267,20 @@ deployment hardening, rollback, and approved product/legal policies remain.
 
 ## 33. Exact Requirements for NOT_READY to READY
 
-Every readiness input must be evidenced: official protocol verified,
-authentication configured and tested on exact bytes, durable idempotency and
-persistence configured, transport configured behind approved credentials,
-runtime configured and hardened, and all operational/security gates approved.
-Until all applicable reasons are absent, the result is `NOT_READY`. In F1B-07,
-the compiled phase gate keeps Meta `NOT_READY` even if a caller supplies all
-configuration flags as true; a later authorized phase must replace that gate
-with verified implementation evidence.
+Every readiness input must be evidenced: official POST signature protocol
+verified, official handshake protocol verified, WABA subscription configured,
+webhook verification token supplied as a secret reference, HTTPS ingress and TLS
+certificate configured, transport configured behind approved credentials,
+durable persistence configured, and all operational/security gates approved.
+Until all applicable reasons are absent, the result is `NOT_READY`. In F1B-08,
+the compiled phase gate keeps Meta signature and handshake reasons pending even
+if a caller supplies optimistic configuration flags; a later authorized phase
+must replace that gate with verified implementation evidence.
 
 ## 34. Safe Next Phase
 
-Verify the official Meta protocol from primary documentation in a separately
-authorized phase, then specify provider decoding and authentication tests without
-live credentials. Keep the current live decoder and transport unconfigured until
+Verify the remaining official Meta signature and handshake protocol details from
+primary documentation in a separately authorized phase, then specify exact-byte
+authentication tests without live credentials. Keep transport unconfigured until
 durable storage, resolution, queue/worker, observability, deployment, and product
 approval gates are ready together.

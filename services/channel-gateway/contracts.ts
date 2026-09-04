@@ -58,6 +58,7 @@ export interface NormalizedChannelPayload {
   content?: ProviderNeutralContent;
   providerAddress?: string;
   externalConversationId?: string;
+  providerTimestamp?: string;
   deliveryStatus?: 'SENT' | 'DELIVERED' | 'FAILED';
   readStatus?: 'READ';
   availability?: ChannelAvailability;

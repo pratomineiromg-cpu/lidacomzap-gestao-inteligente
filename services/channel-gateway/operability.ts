@@ -80,20 +80,34 @@ export interface GatewayHealth {
 
 export type ProviderReadinessReason =
   | 'OFFICIAL_PROTOCOL_NOT_VERIFIED'
+  | 'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED'
+  | 'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED'
+  | 'WABA_SUBSCRIPTION_NOT_CONFIGURED'
+  | 'WEBHOOK_VERIFY_TOKEN_NOT_CONFIGURED'
+  | 'HTTPS_INGRESS_NOT_CONFIGURED'
+  | 'TLS_CERTIFICATE_NOT_CONFIGURED'
   | 'WEBHOOK_AUTH_NOT_CONFIGURED'
   | 'DURABLE_IDEMPOTENCY_NOT_CONFIGURED'
+  | 'DURABLE_PERSISTENCE_NOT_CONFIGURED'
   | 'TRANSPORT_NOT_CONFIGURED'
   | 'PERSISTENCE_NOT_CONFIGURED'
   | 'RUNTIME_NOT_CONFIGURED';
 
 export interface ProviderReadinessInput {
   provider: ChannelProvider;
-  officialProtocolVerified: boolean;
-  webhookAuthConfigured: boolean;
-  durableIdempotencyConfigured: boolean;
+  officialProtocolVerified?: boolean;
+  officialSignatureProtocolVerified?: boolean;
+  officialHandshakeProtocolVerified?: boolean;
+  wabaSubscriptionConfigured?: boolean;
+  webhookVerifyTokenConfigured?: boolean;
+  httpsIngressConfigured?: boolean;
+  tlsCertificateConfigured?: boolean;
+  webhookAuthConfigured?: boolean;
+  durableIdempotencyConfigured?: boolean;
+  durablePersistenceConfigured?: boolean;
   transportConfigured: boolean;
-  persistenceConfigured: boolean;
-  runtimeConfigured: boolean;
+  persistenceConfigured?: boolean;
+  runtimeConfigured?: boolean;
 }
 
 export interface ProviderLiveReadiness {
@@ -106,15 +120,39 @@ export function evaluateProviderLiveReadiness(
   input: ProviderReadinessInput
 ): ProviderLiveReadiness {
   const reasons: ProviderReadinessReason[] = [];
-  // F1B-07 contains no verified official provider protocol. Input cannot override that phase gate.
-  if (input.provider === 'WHATSAPP_META_OFFICIAL' || !input.officialProtocolVerified) {
-    reasons.push('OFFICIAL_PROTOCOL_NOT_VERIFIED');
+
+  if (input.provider === 'WHATSAPP_META_OFFICIAL') {
+    // F1B-08 verifies the envelope decoder only. POST signature and challenge
+    // details stay pending and cannot be enabled by configuration flags.
+    reasons.push('OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED');
+    reasons.push('OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED');
+    if (!input.wabaSubscriptionConfigured) {
+      reasons.push('WABA_SUBSCRIPTION_NOT_CONFIGURED');
+    }
+    if (!input.webhookVerifyTokenConfigured) {
+      reasons.push('WEBHOOK_VERIFY_TOKEN_NOT_CONFIGURED');
+    }
+    if (!input.httpsIngressConfigured) {
+      reasons.push('HTTPS_INGRESS_NOT_CONFIGURED');
+    }
+    if (!input.tlsCertificateConfigured) {
+      reasons.push('TLS_CERTIFICATE_NOT_CONFIGURED');
+    }
+    if (!input.transportConfigured) {
+      reasons.push('TRANSPORT_NOT_CONFIGURED');
+    }
+    if (!input.durablePersistenceConfigured) {
+      reasons.push('DURABLE_PERSISTENCE_NOT_CONFIGURED');
+    }
+  } else {
+    if (!input.officialProtocolVerified) reasons.push('OFFICIAL_PROTOCOL_NOT_VERIFIED');
+    if (!input.webhookAuthConfigured) reasons.push('WEBHOOK_AUTH_NOT_CONFIGURED');
+    if (!input.durableIdempotencyConfigured) reasons.push('DURABLE_IDEMPOTENCY_NOT_CONFIGURED');
+    if (!input.transportConfigured) reasons.push('TRANSPORT_NOT_CONFIGURED');
+    if (!input.persistenceConfigured) reasons.push('PERSISTENCE_NOT_CONFIGURED');
+    if (!input.runtimeConfigured) reasons.push('RUNTIME_NOT_CONFIGURED');
   }
-  if (!input.webhookAuthConfigured) reasons.push('WEBHOOK_AUTH_NOT_CONFIGURED');
-  if (!input.durableIdempotencyConfigured) reasons.push('DURABLE_IDEMPOTENCY_NOT_CONFIGURED');
-  if (!input.transportConfigured) reasons.push('TRANSPORT_NOT_CONFIGURED');
-  if (!input.persistenceConfigured) reasons.push('PERSISTENCE_NOT_CONFIGURED');
-  if (!input.runtimeConfigured) reasons.push('RUNTIME_NOT_CONFIGURED');
+
   return {
     provider: input.provider,
     status: reasons.length === 0 ? 'READY' : 'NOT_READY',
@@ -138,6 +176,7 @@ export interface ProviderSafeConfig {
 export interface ProviderSecretRefs {
   authentication: SecretRef;
   webhookVerification: SecretRef;
+  webhookVerifyToken?: SecretRef;
 }
 
 export type ProviderTransportResult =

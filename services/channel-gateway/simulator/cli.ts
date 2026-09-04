@@ -7,6 +7,7 @@ import { GatewayError } from '../errors';
 import { InMemoryDurableIdempotencyStore } from '../idempotency';
 import { processLiveWebhookRequest, processTrustedSyntheticFixture } from '../inbound';
 import { EvolutionOptionalOfflineAdapter } from '../providers/evolution-optional';
+import { WhatsAppMetaOfficialWebhookDecoder } from '../providers/metaOfficialProtocol';
 import { RcsGoogleOfflineAdapter } from '../providers/rcs-google';
 import {
   WhatsAppMetaLiveDecoderPending,
@@ -39,6 +40,11 @@ type SimulatorScenario =
   | 'META_INVALID'
   | 'META_AUTH_REJECTED'
   | 'META_LIVE_NOT_CONFIGURED'
+  | 'META_OFFICIAL_INBOUND'
+  | 'META_OFFICIAL_STATUS_SENT'
+  | 'META_OFFICIAL_STATUS_DELIVERED'
+  | 'META_OFFICIAL_STATUS_READ'
+  | 'META_OFFICIAL_STATUS_FAILED'
   | 'RCS_SYNTHETIC_REGRESSION';
 
 interface SimulatorOutput {
@@ -76,6 +82,11 @@ function parseArguments(args: readonly string[]): SimulatorArguments {
       'META_INVALID',
       'META_AUTH_REJECTED',
       'META_LIVE_NOT_CONFIGURED',
+      'META_OFFICIAL_INBOUND',
+      'META_OFFICIAL_STATUS_SENT',
+      'META_OFFICIAL_STATUS_DELIVERED',
+      'META_OFFICIAL_STATUS_READ',
+      'META_OFFICIAL_STATUS_FAILED',
       'RCS_SYNTHETIC_REGRESSION'
     ].includes(scenario)) ||
     !Number.isInteger(repeat) ||
@@ -180,6 +191,40 @@ function liveScenario(authenticator: WebhookAuthenticator): GatewayAuditEvent {
   }).audit;
 }
 
+function liveOfficialScenario(fixtureName: string): GatewayAuditEvent {
+  const now = new Date();
+  const resolved = path.resolve(FIXTURE_DIRECTORY, fixtureName);
+  if (path.basename(fixtureName) !== fixtureName || path.dirname(resolved) !== FIXTURE_DIRECTORY) {
+    throw new GatewayError('INVALID_EVENT');
+  }
+
+  return processLiveWebhookRequest({
+    adapter: new WhatsAppMetaOfflineAdapter(),
+    request: createLiveWebhookRequest({
+      method: 'POST',
+      rawBody: fs.readFileSync(resolved),
+      receivedAt: now,
+      requestId: 'simulator-official-request-opaque'
+    }),
+    authenticator: new ScenarioAuthenticator('VERIFIED'),
+    liveDecoder: new WhatsAppMetaOfficialWebhookDecoder(),
+    contactIdentityResolver: {
+      resolve: () => ({
+        status: 'RESOLVED_EXISTING',
+        contactId: 'simulator-contact-opaque',
+        contactIdentityId: 'simulator-identity-opaque'
+      })
+    },
+    conversationResolver: {
+      resolve: () => ({ status: 'RESOLVED_EXISTING', conversationId: 'simulator-conversation-opaque' })
+    },
+    idempotencyStore: new InMemoryDurableIdempotencyStore(),
+    ownerId: 'simulator-official-owner-opaque',
+    now,
+    leaseDurationMs: 30_000
+  }).audit;
+}
+
 function simulateScenario(scenario: SimulatorScenario): readonly GatewayAuditEvent[] {
   switch (scenario) {
     case 'META_VALID_SYNTHETIC':
@@ -200,6 +245,16 @@ function simulateScenario(scenario: SimulatorScenario): readonly GatewayAuditEve
       return [liveScenario(new ScenarioAuthenticator('REJECTED'))];
     case 'META_LIVE_NOT_CONFIGURED':
       return [liveScenario(new UnconfiguredWebhookAuthenticator())];
+    case 'META_OFFICIAL_INBOUND':
+      return [liveOfficialScenario('meta-official-inbound-envelope.synthetic.json')];
+    case 'META_OFFICIAL_STATUS_SENT':
+      return [liveOfficialScenario('meta-official-status-sent.synthetic.json')];
+    case 'META_OFFICIAL_STATUS_DELIVERED':
+      return [liveOfficialScenario('meta-official-status-delivered.synthetic.json')];
+    case 'META_OFFICIAL_STATUS_READ':
+      return [liveOfficialScenario('meta-official-status-read.synthetic.json')];
+    case 'META_OFFICIAL_STATUS_FAILED':
+      return [liveOfficialScenario('meta-official-status-failed.synthetic.json')];
     case 'RCS_SYNTHETIC_REGRESSION':
       return simulateFixture(
         new RcsGoogleOfflineAdapter(),

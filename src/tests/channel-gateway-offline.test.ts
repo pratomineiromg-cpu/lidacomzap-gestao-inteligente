@@ -504,7 +504,11 @@ describe('F1B-05D channel gateway offline foundation', () => {
     for (const fixtureFile of fixtureFiles) {
       const raw = fs.readFileSync(path.join(fixtureDirectory, fixtureFile), 'utf8');
       const fixture = JSON.parse(raw) as Record<string, unknown>;
-      expect(fixture.synthetic).toBe(true);
+      if (fixtureFile.startsWith('meta-official-')) {
+        expect(fixtureFile).toMatch(/\.synthetic\.json$/);
+      } else {
+        expect(fixture.synthetic).toBe(true);
+      }
       expect(raw).not.toMatch(/prato\s+mineiro|restaurante/i);
       if (typeof fixture.providerAddress === 'string') {
         expect(fixture.providerAddress).toMatch(/^\+5511900000\d{3}$/);

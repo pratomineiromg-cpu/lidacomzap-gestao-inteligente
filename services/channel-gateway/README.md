@@ -40,3 +40,8 @@ semantics, resolution ports, pure state machines, an in-memory outbound queue
 reference, and an explicit live-readiness evaluator. Meta live decoding,
 authentication, transport, production persistence, workers, ingress, and runtime
 deployment remain unconfigured. See `docs/meta-live-prerequisites-offline.md`.
+
+F1B-08 adds a strict offline decoder for the verified official Meta webhook
+envelope and synthetic official fixtures. It still does not implement signature,
+challenge, subscription management, Graph API calls, transport, credentials, or
+provider connectivity.

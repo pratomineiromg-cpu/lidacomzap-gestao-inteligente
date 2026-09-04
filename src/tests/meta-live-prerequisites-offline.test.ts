@@ -372,23 +372,41 @@ describe('F1B-07 Meta live prerequisites offline', () => {
 
   it('distinguishes process health from honest Meta live readiness', () => {
     const readiness = evaluateProviderLiveReadiness({
-      provider: 'WHATSAPP_META_OFFICIAL', officialProtocolVerified: false,
-      webhookAuthConfigured: false, durableIdempotencyConfigured: false,
-      transportConfigured: false, persistenceConfigured: false, runtimeConfigured: false
+      provider: 'WHATSAPP_META_OFFICIAL',
+      wabaSubscriptionConfigured: false,
+      webhookVerifyTokenConfigured: false,
+      httpsIngressConfigured: false,
+      tlsCertificateConfigured: false,
+      transportConfigured: false,
+      durablePersistenceConfigured: false
     });
     expect(readiness.status).toBe('NOT_READY');
     expect(readiness.reasons).toEqual([
-      'OFFICIAL_PROTOCOL_NOT_VERIFIED', 'WEBHOOK_AUTH_NOT_CONFIGURED',
-      'DURABLE_IDEMPOTENCY_NOT_CONFIGURED', 'TRANSPORT_NOT_CONFIGURED',
-      'PERSISTENCE_NOT_CONFIGURED', 'RUNTIME_NOT_CONFIGURED'
+      'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED',
+      'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED',
+      'WABA_SUBSCRIPTION_NOT_CONFIGURED',
+      'WEBHOOK_VERIFY_TOKEN_NOT_CONFIGURED',
+      'HTTPS_INGRESS_NOT_CONFIGURED',
+      'TLS_CERTIFICATE_NOT_CONFIGURED',
+      'TRANSPORT_NOT_CONFIGURED',
+      'DURABLE_PERSISTENCE_NOT_CONFIGURED'
     ]);
     expect(evaluateProviderLiveReadiness({
-      provider: 'WHATSAPP_META_OFFICIAL', officialProtocolVerified: true,
-      webhookAuthConfigured: true, durableIdempotencyConfigured: true,
-      transportConfigured: true, persistenceConfigured: true, runtimeConfigured: true
+      provider: 'WHATSAPP_META_OFFICIAL',
+      officialSignatureProtocolVerified: true,
+      officialHandshakeProtocolVerified: true,
+      wabaSubscriptionConfigured: true,
+      webhookVerifyTokenConfigured: true,
+      httpsIngressConfigured: true,
+      tlsCertificateConfigured: true,
+      transportConfigured: true,
+      durablePersistenceConfigured: true
     })).toEqual({
       provider: 'WHATSAPP_META_OFFICIAL', status: 'NOT_READY',
-      reasons: ['OFFICIAL_PROTOCOL_NOT_VERIFIED']
+      reasons: [
+        'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED',
+        'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED'
+      ]
     });
   });
 
