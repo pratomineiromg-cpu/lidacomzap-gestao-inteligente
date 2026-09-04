@@ -1,8 +1,11 @@
 import type { ChannelGatewayAdapter, GatewayCommand, GatewayProcessResult, NormalizedChannelEvent } from './contracts';
 import { GatewayError } from './errors';
-import type { IdempotencyStore } from './idempotency';
+import type { DurableIdempotencyStore } from './idempotency';
 import { assertNormalizedEvent, createOpaqueGatewayId } from './normalization';
+import type { ProviderRawDecoder, RawWebhookRequest } from './rawWebhook';
+import type { ContactIdentityResolver, ConversationResolver } from './resolution';
 import { createSanitizedAuditEvent } from './sanitizer';
+import type { WebhookAuthenticator } from './webhookAuth';
 
 function commandFor(event: NormalizedChannelEvent): GatewayCommand {
   switch (event.eventType) {
@@ -23,27 +26,67 @@ function commandFor(event: NormalizedChannelEvent): GatewayCommand {
   }
 }
 
-export interface ProcessInboundOptions {
+interface DurableProcessOptions {
   adapter: ChannelGatewayAdapter;
-  rawFixture: unknown;
-  idempotencyStore: IdempotencyStore;
-  auditedAt?: Date;
+  idempotencyStore: DurableIdempotencyStore;
+  ownerId: string;
+  now: Date;
+  leaseDurationMs: number;
   createInternalEventId?: () => string;
 }
 
-/** Pure orchestration apart from the injected process-local idempotency store. */
-export function processInboundProviderEvent(options: ProcessInboundOptions): GatewayProcessResult {
-  const auditedAt = options.auditedAt ?? new Date();
+export interface ProcessTrustedSyntheticFixtureOptions extends DurableProcessOptions {
+  rawFixture: unknown;
+  trustMode: 'TRUSTED_SYNTHETIC_FIXTURE';
+}
+
+export interface ProcessLiveWebhookOptions extends DurableProcessOptions {
+  request: RawWebhookRequest;
+  authenticator: WebhookAuthenticator;
+  liveDecoder: ProviderRawDecoder;
+  contactIdentityResolver: ContactIdentityResolver;
+  conversationResolver: ConversationResolver;
+}
+
+function rejectBeforeDecode(
+  options: DurableProcessOptions,
+  reasonCode: 'WEBHOOK_AUTH_NOT_CONFIGURED' | 'WEBHOOK_AUTH_REJECTED'
+): GatewayProcessResult {
+  const createInternalEventId = options.createInternalEventId ?? (() => createOpaqueGatewayId('gateway-event'));
+  return {
+    outcome: 'REJECTED',
+    audit: createSanitizedAuditEvent({
+      internalEventId: createInternalEventId(),
+      provider: options.adapter.provider,
+      channel: options.adapter.channel,
+      outcome: 'REJECTED',
+      reasonCode,
+      duplicate: false,
+      auditedAt: options.now
+    })
+  };
+}
+
+function processDurably(
+  options: DurableProcessOptions,
+  normalize: (context: { createInternalEventId: () => string }) => NormalizedChannelEvent
+): GatewayProcessResult {
   const createInternalEventId = options.createInternalEventId ?? (() => createOpaqueGatewayId('gateway-event'));
   let event: NormalizedChannelEvent | undefined;
-
   try {
-    event = options.adapter.normalizeEvent(options.rawFixture, { createInternalEventId });
+    event = normalize({ createInternalEventId });
     assertNormalizedEvent(event);
+    if (event.provider !== options.adapter.provider || event.channel !== options.adapter.channel) {
+      throw new GatewayError('INVALID_EVENT');
+    }
     const key = options.adapter.createIdempotencyKey(event);
-    const accepted = options.idempotencyStore.reserve(key);
-
-    if (!accepted) {
+    const acquired = options.idempotencyStore.tryAcquire({
+      key,
+      ownerId: options.ownerId,
+      now: options.now,
+      leaseDurationMs: options.leaseDurationMs
+    });
+    if (['ALREADY_PROCESSING', 'ALREADY_COMPLETED'].includes(acquired.status)) {
       return {
         outcome: 'DUPLICATE',
         event,
@@ -55,15 +98,19 @@ export function processInboundProviderEvent(options: ProcessInboundOptions): Gat
           outcome: 'DUPLICATE',
           reasonCode: 'DUPLICATE_EVENT',
           duplicate: true,
-          auditedAt
+          auditedAt: options.now
         })
       };
     }
-
+    if (acquired.status === 'FINAL_FAILURE') {
+      throw new GatewayError('NON_RETRYABLE');
+    }
+    const command = commandFor(event);
+    options.idempotencyStore.complete(key, options.ownerId, options.now);
     return {
       outcome: 'ACCEPTED',
       event,
-      command: commandFor(event),
+      command,
       audit: createSanitizedAuditEvent({
         event,
         internalEventId: event.internalEventId,
@@ -72,7 +119,7 @@ export function processInboundProviderEvent(options: ProcessInboundOptions): Gat
         outcome: 'ACCEPTED',
         reasonCode: 'EVENT_ACCEPTED',
         duplicate: false,
-        auditedAt
+        auditedAt: options.now
       })
     };
   } catch (error) {
@@ -80,6 +127,7 @@ export function processInboundProviderEvent(options: ProcessInboundOptions): Gat
     return {
       outcome: 'REJECTED',
       audit: createSanitizedAuditEvent({
+        event,
         internalEventId: event?.internalEventId ?? createInternalEventId(),
         provider: options.adapter.provider,
         channel: options.adapter.channel,
@@ -87,8 +135,57 @@ export function processInboundProviderEvent(options: ProcessInboundOptions): Gat
         outcome: 'REJECTED',
         reasonCode: code,
         duplicate: false,
-        auditedAt
+        auditedAt: options.now
       })
     };
   }
+}
+
+/** Explicit fixture-only entrypoint. It never produces a live verification claim. */
+export function processTrustedSyntheticFixture(
+  options: ProcessTrustedSyntheticFixtureOptions
+): GatewayProcessResult {
+  return processDurably(options, (context) => options.adapter.normalizeEvent(options.rawFixture, context));
+}
+
+/** Fail-closed live entrypoint. Authentication occurs on exact bytes before decoding. */
+export function processLiveWebhookRequest(options: ProcessLiveWebhookOptions): GatewayProcessResult {
+  if (
+    options.request.trustMode !== 'LIVE_UNTRUSTED' ||
+    options.authenticator.provider !== options.adapter.provider ||
+    options.liveDecoder.provider !== options.adapter.provider
+  ) {
+    return rejectBeforeDecode(options, 'WEBHOOK_AUTH_REJECTED');
+  }
+  const authentication = options.authenticator.verify(options.request);
+  if (authentication.status === 'NOT_CONFIGURED') {
+    return rejectBeforeDecode(options, 'WEBHOOK_AUTH_NOT_CONFIGURED');
+  }
+  if (authentication.status !== 'VERIFIED') {
+    return rejectBeforeDecode(options, 'WEBHOOK_AUTH_REJECTED');
+  }
+  return processDurably(options, (context) => {
+    const event = options.liveDecoder.decode(options.request, context);
+    if (event.eventType !== 'INBOUND_MESSAGE') return event;
+    const externalAddress = event.payload.providerAddress;
+    if (!externalAddress) throw new GatewayError('IDENTITY_REJECTED');
+    const identity = options.contactIdentityResolver.resolve({
+      provider: event.provider,
+      channel: event.channel,
+      externalAddress
+    });
+    if (identity.status === 'NOT_FOUND') throw new GatewayError('IDENTITY_NOT_FOUND');
+    if (identity.status === 'AMBIGUOUS') throw new GatewayError('IDENTITY_AMBIGUOUS');
+    if (identity.status === 'REJECTED') throw new GatewayError('IDENTITY_REJECTED');
+    const conversation = options.conversationResolver.resolve({
+      contactId: identity.contactId,
+      provider: event.provider,
+      channel: event.channel,
+      externalConversationId: event.payload.externalConversationId
+    });
+    if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
+    if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
+    if (conversation.status === 'REJECTED') throw new GatewayError('CONVERSATION_REJECTED');
+    return event;
+  });
 }

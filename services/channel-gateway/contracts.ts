@@ -23,6 +23,16 @@ export type GatewayOutcome = 'ACCEPTED' | 'DUPLICATE' | 'REJECTED';
 
 export type GatewayErrorCode =
   | 'INVALID_EVENT'
+  | 'MALFORMED_REQUEST'
+  | 'WEBHOOK_AUTH_NOT_CONFIGURED'
+  | 'WEBHOOK_AUTH_REJECTED'
+  | 'OFFICIAL_PROTOCOL_NOT_VERIFIED'
+  | 'IDENTITY_NOT_FOUND'
+  | 'IDENTITY_AMBIGUOUS'
+  | 'IDENTITY_REJECTED'
+  | 'CONVERSATION_NOT_FOUND'
+  | 'CONVERSATION_AMBIGUOUS'
+  | 'CONVERSATION_REJECTED'
   | 'UNSUPPORTED_EVENT'
   | 'DUPLICATE_EVENT'
   | 'PROVIDER_UNAVAILABLE'
@@ -149,18 +159,3 @@ export type GatewayProcessResult =
       outcome: 'REJECTED';
       audit: GatewayAuditEvent;
     };
-
-/** Future authorized CRM-layer boundary; no resolver is implemented here. */
-export interface ContactIdentityResolutionRequest {
-  provider: ChannelProvider;
-  channel: CommunicationChannel;
-  providerAddress: string;
-}
-
-/** Future conversation-layer context; the gateway never creates Conversation. */
-export interface ConversationResolutionContext {
-  provider: ChannelProvider;
-  channel: CommunicationChannel;
-  externalConversationId?: string;
-  providerMessageId?: string;
-}

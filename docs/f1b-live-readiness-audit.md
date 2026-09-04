@@ -491,3 +491,21 @@ Host prerequisites must be separated explicitly:
    rollback, incident, and reconciliation procedures.
 7. Broaden operation only after evidence from the pilot and a new approval gate.
 8. Preserve the ability to return to `MOCK` throughout every activation stage.
+
+## Addendum — F1B-07 Meta Live Prerequisites Offline (2026-09-04)
+
+F1B-07 added offline-only raw-body and trust boundaries, typed webhook auth and
+handshake contracts, a provider-neutral cryptographic primitive, strict internal
+Meta fixture decoding, durable idempotency lease semantics, Contact identity and
+Conversation resolution ports, pure inbound/outbound state machines, an outbound
+queue reference, failure/retry/rate-limit foundations, privacy-safe operational
+contracts, health/readiness separation, opaque secret references, an
+unconfigured transport port, provider-neutral persistence ports, and Simulator
+V2 security scenarios.
+
+This addendum does not revise the historical audit conclusion. WhatsApp Meta
+foundation maturity advanced, but live remains **NOT_READY**. Official protocol
+verification, real authentication, secrets, HTTPS runtime, live transport,
+production durable storage and resolution, queue workers, runtime observability,
+deployment hardening, and approval gates remain blockers. No channel connection,
+remote persistence, credential, deployment, or real-data access was added.

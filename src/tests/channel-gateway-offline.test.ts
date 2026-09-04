@@ -12,8 +12,8 @@ import type {
   OutboundPreparationInput
 } from '../../services/channel-gateway/contracts';
 import { classifyGatewayError, GatewayError } from '../../services/channel-gateway/errors';
-import { InMemoryIdempotencyStore } from '../../services/channel-gateway/idempotency';
-import { processInboundProviderEvent } from '../../services/channel-gateway/inbound';
+import { InMemoryDurableIdempotencyStore } from '../../services/channel-gateway/idempotency';
+import { processTrustedSyntheticFixture } from '../../services/channel-gateway/inbound';
 import {
   createProviderIdempotencyKey,
   prepareProviderNeutralOutbound
@@ -35,6 +35,9 @@ const fixedAt = new Date('2026-01-01T12:00:00.000Z');
 function metaFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     synthetic: true,
+    fixtureContract: 'INTERNAL_SYNTHETIC_META_V1',
+    provider: 'WHATSAPP_META_OFFICIAL',
+    channel: 'WHATSAPP',
     kind: 'inbound_message',
     providerEventId: 'synthetic-meta-event-001',
     providerMessageId: 'synthetic-meta-message-001',
@@ -90,6 +93,22 @@ function outboundInput(decision: RoutingDecision): OutboundPreparationInput {
     routingDecision: decision,
     routingDecisionId: 'routing-decision-opaque-001'
   };
+}
+
+function processLegacyTestFixture(options: {
+  adapter: ChannelGatewayAdapter;
+  rawFixture: unknown;
+  idempotencyStore: InMemoryDurableIdempotencyStore;
+  auditedAt?: Date;
+  createInternalEventId?: () => string;
+}) {
+  return processTrustedSyntheticFixture({
+    ...options,
+    trustMode: 'TRUSTED_SYNTHETIC_FIXTURE',
+    ownerId: 'legacy-test-owner-opaque',
+    now: options.auditedAt ?? fixedAt,
+    leaseDurationMs: 30_000
+  });
 }
 
 function typescriptFiles(directory: string): string[] {
@@ -231,17 +250,17 @@ describe('F1B-05D channel gateway offline foundation', () => {
 
   it('accepts the first event and rejects the repeated logical event as duplicate', () => {
     const adapter = new WhatsAppMetaOfflineAdapter();
-    const store = new InMemoryIdempotencyStore();
+    const store = new InMemoryDurableIdempotencyStore();
     let sequence = 0;
     const createInternalEventId = () => `gateway-event-opaque-${++sequence}`;
-    const first = processInboundProviderEvent({
+    const first = processLegacyTestFixture({
       adapter,
       rawFixture: metaFixture(),
       idempotencyStore: store,
       auditedAt: fixedAt,
       createInternalEventId
     });
-    const duplicate = processInboundProviderEvent({
+    const duplicate = processLegacyTestFixture({
       adapter,
       rawFixture: metaFixture(),
       idempotencyStore: store,
@@ -281,10 +300,10 @@ describe('F1B-05D channel gateway offline foundation', () => {
   });
 
   it('returns a sanitized audit shape without message, address, or raw payload', () => {
-    const result = processInboundProviderEvent({
+    const result = processLegacyTestFixture({
       adapter: new WhatsAppMetaOfflineAdapter(),
       rawFixture: metaFixture(),
-      idempotencyStore: new InMemoryIdempotencyStore(),
+      idempotencyStore: new InMemoryDurableIdempotencyStore(),
       auditedAt: fixedAt,
       createInternalEventId: () => 'gateway-event-opaque-001'
     });
@@ -309,10 +328,10 @@ describe('F1B-05D channel gateway offline foundation', () => {
   });
 
   it('sanitizes rejected event diagnostics as a code only', () => {
-    const result = processInboundProviderEvent({
+    const result = processLegacyTestFixture({
       adapter: new WhatsAppMetaOfflineAdapter(),
       rawFixture: { synthetic: true, unexpected: 'sensitive synthetic value' },
-      idempotencyStore: new InMemoryIdempotencyStore(),
+      idempotencyStore: new InMemoryDurableIdempotencyStore(),
       auditedAt: fixedAt,
       createInternalEventId: () => 'gateway-event-rejected-opaque'
     });
@@ -409,9 +428,18 @@ describe('F1B-05D channel gateway offline foundation', () => {
   it('keeps live webhook authentication explicitly unconfigured', () => {
     const authenticator = new UnconfiguredWebhookAuthenticator();
 
+    const request = {
+      method: 'POST',
+      rawBody: new TextEncoder().encode('synthetic body'),
+      headers: {},
+      query: {},
+      receivedAt: fixedAt,
+      requestId: 'request-opaque-001',
+      trustMode: 'LIVE_UNTRUSTED' as const
+    };
+
     expect(authenticator.status).toBe('NOT_CONFIGURED');
-    expect(authenticator.verify({ rawBody: 'synthetic body', headers: {} }))
-      .toBe('NOT_CONFIGURED');
+    expect(authenticator.verify(request).status).toBe('NOT_CONFIGURED');
   });
 
   it('runs Meta simulator replay as accepted then duplicate', () => {
@@ -527,10 +555,10 @@ describe('F1B-05D channel gateway offline foundation', () => {
   });
 
   it('models provider-neutral commands without repository writes', () => {
-    const result = processInboundProviderEvent({
+    const result = processLegacyTestFixture({
       adapter: new RcsGoogleOfflineAdapter(),
       rawFixture: rcsFixture({ kind: 'read_status' }),
-      idempotencyStore: new InMemoryIdempotencyStore(),
+      idempotencyStore: new InMemoryDurableIdempotencyStore(),
       createInternalEventId: () => 'gateway-event-command-opaque'
     });
 

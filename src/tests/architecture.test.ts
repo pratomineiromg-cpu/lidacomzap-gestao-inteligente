@@ -24,4 +24,29 @@ describe('Architectural Integrity Tests', () => {
     expect(eventEngineContent).toContain("console.log('[EventEngine]', event.type);");
     expect(eventEngineContent).not.toMatch(/console\.log\([^)]*,\s*event\s*\)/);
   });
+
+  it('keeps F1B-07 dependency directions offline and provider-neutral', () => {
+    const readTree = (directory: string): string => fs.readdirSync(directory, { withFileTypes: true })
+      .flatMap((entry) => {
+        const fullPath = path.join(directory, entry.name);
+        return entry.isDirectory()
+          ? [readTree(fullPath)]
+          : entry.name.endsWith('.ts') ? [fs.readFileSync(fullPath, 'utf8')] : [];
+      })
+      .join('\n');
+    const domain = readTree(path.resolve(process.cwd(), 'src/domain'));
+    const gateway = readTree(path.resolve(process.cwd(), 'services/channel-gateway'));
+    const providers = readTree(path.resolve(process.cwd(), 'services/channel-gateway/providers'));
+    const routing = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/routing.ts'), 'utf8');
+    const contactTools = [
+      readTree(path.resolve(process.cwd(), 'tools/contact-bootstrap')),
+      readTree(path.resolve(process.cwd(), 'tools/contact-import'))
+    ].join('\n');
+
+    expect(domain).not.toMatch(/channel-gateway|firebase|firestore/i);
+    expect(gateway).not.toMatch(/src[\\/]repositories|firebase|firestore|src[\\/](components|views)/i);
+    expect(providers).not.toMatch(/src[\\/](components|views)|react/i);
+    expect(routing).not.toMatch(/ProviderTransport|channel-gateway/);
+    expect(contactTools).not.toMatch(/channel-gateway|ProviderTransport/);
+  });
 });

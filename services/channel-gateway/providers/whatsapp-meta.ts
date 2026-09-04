@@ -7,16 +7,17 @@ import type {
   OutboundPreparationInput,
   PreparedOutboundMessage
 } from '../contracts';
+import type { ProviderRawDecoder, RawWebhookRequest } from '../rawWebhook';
 import { GatewayError } from '../errors';
 import {
   createProviderIdempotencyKey,
   optionalContentType,
   optionalString,
   prepareProviderNeutralOutbound,
-  requiredString,
-  requireSyntheticFixture
+  requiredString
 } from '../normalization';
 import { configuredCapabilities, normalizedFixtureEvent } from './shared';
+import { decodeMetaSyntheticFixture } from './metaSyntheticFixture';
 
 export class WhatsAppMetaOfflineAdapter implements ChannelGatewayAdapter {
   readonly provider = 'WHATSAPP_META_OFFICIAL' as const;
@@ -32,7 +33,7 @@ export class WhatsAppMetaOfflineAdapter implements ChannelGatewayAdapter {
     rawFixture: unknown,
     context: GatewayNormalizationContext
   ): NormalizedChannelEvent {
-    const record = requireSyntheticFixture(rawFixture);
+    const record = decodeMetaSyntheticFixture(rawFixture);
     const kind = requiredString(record, 'kind');
 
     if (kind === 'inbound_message') {
@@ -97,5 +98,17 @@ export class WhatsAppMetaOfflineAdapter implements ChannelGatewayAdapter {
 
   prepareOutbound(input: OutboundPreparationInput): PreparedOutboundMessage {
     return prepareProviderNeutralOutbound(this.provider, this.channel, input);
+  }
+}
+
+/** PENDING OFFICIAL SPEC VERIFICATION: live Meta decoding is deliberately unavailable. */
+export class WhatsAppMetaLiveDecoderPending implements ProviderRawDecoder {
+  readonly provider = 'WHATSAPP_META_OFFICIAL' as const;
+
+  decode(
+    _request: RawWebhookRequest,
+    _context: GatewayNormalizationContext
+  ): NormalizedChannelEvent {
+    throw new GatewayError('OFFICIAL_PROTOCOL_NOT_VERIFIED');
   }
 }

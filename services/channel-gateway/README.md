@@ -34,6 +34,9 @@ Provider capabilities are supplied explicitly to each adapter instance. Empty
 configuration means no known capability. Normalizing an observed application
 message does not claim that message echo is universally available.
 
-The webhook authenticator remains `NOT_CONFIGURED`. Future verification,
-persistent idempotency, queues, workers, ingress, observability, and runtime
-deployment belong to later phases.
+F1B-07 adds separate live-untrusted and trusted-fixture entrypoints, exact raw
+byte preservation, typed authentication/handshake boundaries, durable lease
+semantics, resolution ports, pure state machines, an in-memory outbound queue
+reference, and an explicit live-readiness evaluator. Meta live decoding,
+authentication, transport, production persistence, workers, ingress, and runtime
+deployment remain unconfigured. See `docs/meta-live-prerequisites-offline.md`.
