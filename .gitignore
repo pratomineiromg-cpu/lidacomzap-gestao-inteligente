@@ -8,7 +8,8 @@ coverage/
 !.env.example
 
 # Tools & Audits
-tools/contact-bootstrap/*.local.json
-tools/contact-bootstrap/*.plan.json
+*.local.json
+*.plan.json
+*.report.json
 f1b*-audit*.txt
 f1b*-audit*.zip
