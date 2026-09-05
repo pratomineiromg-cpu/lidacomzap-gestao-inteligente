@@ -18,6 +18,7 @@ import {
   createGatewayMetricEvent,
   durationBucket,
   evaluateProviderLiveReadiness,
+  META_OFFLINE_LIVE_BLOCKERS,
   type ProviderSecretRefs
 } from '../../services/channel-gateway/operability';
 import { InMemoryOutboundQueue } from '../../services/channel-gateway/outboundQueue';
@@ -384,6 +385,7 @@ describe('F1B-07 Meta live prerequisites offline', () => {
     expect(readiness.reasons).toEqual([
       'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED',
       'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED',
+      ...META_OFFLINE_LIVE_BLOCKERS,
       'WABA_SUBSCRIPTION_NOT_CONFIGURED',
       'WEBHOOK_VERIFY_TOKEN_NOT_CONFIGURED',
       'HTTPS_INGRESS_NOT_CONFIGURED',
@@ -405,7 +407,8 @@ describe('F1B-07 Meta live prerequisites offline', () => {
       provider: 'WHATSAPP_META_OFFICIAL', status: 'NOT_READY',
       reasons: [
         'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED',
-        'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED'
+        'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED',
+        ...META_OFFLINE_LIVE_BLOCKERS
       ]
     });
   });

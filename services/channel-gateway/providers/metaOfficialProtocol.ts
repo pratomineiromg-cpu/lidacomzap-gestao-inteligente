@@ -9,6 +9,7 @@ import {
   type RawWebhookRequest
 } from '../rawWebhook';
 import type { SecretRef } from '../operability';
+import { META_SECURITY_EVIDENCE } from './metaWebhookSecurity';
 
 export const META_OFFICIAL_WEBHOOK_OBJECT = 'whatsapp_business_account' as const;
 export const META_OFFICIAL_MESSAGES_FIELD = 'messages' as const;
@@ -112,6 +113,7 @@ export interface MetaWebhookVerifyTokenBoundary {
 }
 
 export interface MetaOfficialProtocolReadinessContract {
+  offlineSecurity: typeof META_SECURITY_EVIDENCE;
   wabaSubscription: MetaWabaSubscriptionContract;
   webhookVerifyToken: MetaWebhookVerifyTokenBoundary;
   genericCryptoPrimitive: 'READY';
@@ -438,6 +440,7 @@ export function createMetaOfficialProtocolReadinessContract(
   verifyTokenRef?: SecretRef
 ): MetaOfficialProtocolReadinessContract {
   return {
+    offlineSecurity: META_SECURITY_EVIDENCE,
     wabaSubscription: {
       provider: 'WHATSAPP_META_OFFICIAL',
       required: true,

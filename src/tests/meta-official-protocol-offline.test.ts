@@ -5,7 +5,7 @@ import type { NormalizedChannelEvent } from '../../services/channel-gateway/cont
 import { GatewayError } from '../../services/channel-gateway/errors';
 import { InMemoryDurableIdempotencyStore } from '../../services/channel-gateway/idempotency';
 import { processLiveWebhookRequest } from '../../services/channel-gateway/inbound';
-import { evaluateProviderLiveReadiness } from '../../services/channel-gateway/operability';
+import { evaluateProviderLiveReadiness, META_OFFLINE_LIVE_BLOCKERS } from '../../services/channel-gateway/operability';
 import {
   WhatsAppMetaOfficialWebhookDecoder,
   createMetaOfficialProtocolReadinessContract,
@@ -362,7 +362,8 @@ describe('F1B-08 Meta official protocol offline foundation', () => {
       status: 'NOT_READY',
       reasons: [
         'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED',
-        'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED'
+        'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED',
+        ...META_OFFLINE_LIVE_BLOCKERS
       ]
     });
   });

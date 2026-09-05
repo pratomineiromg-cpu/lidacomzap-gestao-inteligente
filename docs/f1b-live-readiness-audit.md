@@ -511,3 +511,17 @@ verification, real authentication, secrets, HTTPS runtime, live transport,
 production durable storage and resolution, queue workers, runtime observability,
 deployment hardening, and approval gates remain blockers. No channel connection,
 remote persistence, credential, deployment, or real-data access was added.
+
+## Addendum — F1B-09 Meta Webhook Security Offline
+
+Meta security now has offline signature and handshake implementations backed by
+the supplied archived official evidence, with current reconfirmation explicitly
+pending. The handler enforces method, byte-size, JSON content type and auth before
+strict decoding; duplicate acquisition precedes resolution. Tests use synthetic
+secrets, raw bytes and memory stores. No server or live dependency is configured.
+See `meta-webhook-security-offline.md` and the evidence document for exact scope.
+
+META SECURITY FOUNDATION: OFFLINE IMPLEMENTED.
+META LIVE STATUS: NOT_READY. Current protocol reconfirmation, real secret
+provisioning, HTTPS/TLS, WABA subscription, production durable store, transport,
+server persistence, runtime observability and deployment hardening remain.

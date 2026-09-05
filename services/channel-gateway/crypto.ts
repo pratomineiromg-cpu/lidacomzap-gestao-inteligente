@@ -1,4 +1,12 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+
+/** Fixed-size digests avoid a variable-length secret comparison. */
+export function timingSafeSecretEqual(actual: Uint8Array, expected: Uint8Array): boolean {
+  return timingSafeEqual(
+    createHash('sha256').update(actual).digest(),
+    createHash('sha256').update(expected).digest()
+  );
+}
 
 export interface DigestVerificationInput {
   rawBody: Uint8Array;

@@ -32,7 +32,10 @@ function normalizeHeaders(
   const normalized: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const [name, value] of Object.entries(headers)) {
     if (value === undefined) continue;
-    normalized[name.toLowerCase()] = typeof value === 'string' ? value : value.join(',');
+    const key = name.toLowerCase();
+    const text = typeof value === 'string' ? value : value.join(',');
+    // Preserve ambiguity so a security adapter can reject duplicate headers.
+    normalized[key] = Object.hasOwn(normalized, key) ? `${normalized[key]},${text}` : text;
   }
   return Object.freeze(normalized);
 }

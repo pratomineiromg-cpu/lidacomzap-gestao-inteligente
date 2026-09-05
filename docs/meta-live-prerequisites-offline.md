@@ -284,3 +284,18 @@ primary documentation in a separately authorized phase, then specify exact-byte
 authentication tests without live credentials. Keep transport unconfigured until
 durable storage, resolution, queue/worker, observability, deployment, and product
 approval gates are ready together.
+
+## F1B-09 Addendum — Archived Security Implemented Offline
+
+The historical F1B-07/F1B-08 descriptions above remain phase records. F1B-09 adds
+an offline Meta GET handshake and raw-body HMAC signature implementation,
+SecretResolver, pure HTTP-shaped handler, method/body/type gates and sanitized
+audit. It reuses the existing decoder and durable idempotency pipeline.
+Identity/conversation resolution now occurs after acquisition and is skipped on
+replay. See `meta-webhook-security-offline.md` for policies and inherited limits.
+
+OFFLINE_SIGNATURE_PROTOCOL_IMPLEMENTED / OFFLINE_HANDSHAKE_PROTOCOL_IMPLEMENTED
+use META_OFFICIAL_ARCHIVED evidence, pending PENDING_CURRENT_META_RECONFIRMATION.
+They do not clear current protocol verification, secrets, HTTPS/TLS, WABA,
+production store, transport, persistence, observability or hardening blockers.
+WhatsApp Meta Official remains NOT_READY; no real connection exists.

@@ -69,10 +69,12 @@ function rejectBeforeDecode(
 
 function processDurably(
   options: DurableProcessOptions,
-  normalize: (context: { createInternalEventId: () => string }) => NormalizedChannelEvent
+  normalize: (context: { createInternalEventId: () => string }) => NormalizedChannelEvent,
+  resolve?: (event: NormalizedChannelEvent) => void
 ): GatewayProcessResult {
   const createInternalEventId = options.createInternalEventId ?? (() => createOpaqueGatewayId('gateway-event'));
   let event: NormalizedChannelEvent | undefined;
+  let acquiredKey: string | undefined;
   try {
     event = normalize({ createInternalEventId });
     assertNormalizedEvent(event);
@@ -105,6 +107,8 @@ function processDurably(
     if (acquired.status === 'FINAL_FAILURE') {
       throw new GatewayError('NON_RETRYABLE');
     }
+    acquiredKey = key;
+    resolve?.(event);
     const command = commandFor(event);
     options.idempotencyStore.complete(key, options.ownerId, options.now);
     return {
@@ -123,6 +127,12 @@ function processDurably(
       })
     };
   } catch (error) {
+    if (acquiredKey) {
+      // A resolution/storage failure must not become a successful duplicate ACK.
+      // Allow retry without holding the lease; no downstream work ran here.
+      try { options.idempotencyStore.fail(acquiredKey, options.ownerId, options.now, 'RETRYABLE'); }
+      catch { /* A storage failure remains a rejected request. */ }
+    }
     const code = error instanceof GatewayError ? error.code : 'INVALID_EVENT';
     return {
       outcome: 'REJECTED',
@@ -164,9 +174,8 @@ export function processLiveWebhookRequest(options: ProcessLiveWebhookOptions): G
   if (authentication.status !== 'VERIFIED') {
     return rejectBeforeDecode(options, 'WEBHOOK_AUTH_REJECTED');
   }
-  return processDurably(options, (context) => {
-    const event = options.liveDecoder.decode(options.request, context);
-    if (event.eventType !== 'INBOUND_MESSAGE') return event;
+  return processDurably(options, (context) => options.liveDecoder.decode(options.request, context), (event) => {
+    if (event.eventType !== 'INBOUND_MESSAGE') return;
     const externalAddress = event.payload.providerAddress;
     if (!externalAddress) throw new GatewayError('IDENTITY_REJECTED');
     const identity = options.contactIdentityResolver.resolve({
@@ -186,6 +195,5 @@ export function processLiveWebhookRequest(options: ProcessLiveWebhookOptions): G
     if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
     if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
     if (conversation.status === 'REJECTED') throw new GatewayError('CONVERSATION_REJECTED');
-    return event;
   });
 }

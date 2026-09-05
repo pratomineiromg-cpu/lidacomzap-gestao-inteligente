@@ -78,7 +78,18 @@ export interface GatewayHealth {
   reasonCodes: readonly string[];
 }
 
-export type ProviderReadinessReason =
+/** Compiled F1B-09 phase gates cannot be bypassed with optimistic config flags. */
+export const META_OFFLINE_LIVE_BLOCKERS = [
+  'CURRENT_META_PROTOCOL_RECONFIRMATION_REQUIRED',
+  'REAL_SECRET_PROVISIONING_REQUIRED',
+  'HTTPS_RUNTIME_NOT_CONFIGURED',
+  'PRODUCTION_DURABLE_STORE_NOT_CONFIGURED',
+  'SERVER_PERSISTENCE_NOT_CONFIGURED',
+  'RUNTIME_OBSERVABILITY_NOT_CONFIGURED',
+  'DEPLOYMENT_NOT_HARDENED'
+] as const;
+
+export type ProviderReadinessReason = typeof META_OFFLINE_LIVE_BLOCKERS[number]
   | 'OFFICIAL_PROTOCOL_NOT_VERIFIED'
   | 'OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED'
   | 'OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED'
@@ -122,10 +133,10 @@ export function evaluateProviderLiveReadiness(
   const reasons: ProviderReadinessReason[] = [];
 
   if (input.provider === 'WHATSAPP_META_OFFICIAL') {
-    // F1B-08 verifies the envelope decoder only. POST signature and challenge
-    // details stay pending and cannot be enabled by configuration flags.
+    // Offline archived implementation is not current live verification.
     reasons.push('OFFICIAL_SIGNATURE_PROTOCOL_NOT_VERIFIED');
     reasons.push('OFFICIAL_HANDSHAKE_PROTOCOL_NOT_VERIFIED');
+    reasons.push(...META_OFFLINE_LIVE_BLOCKERS);
     if (!input.wabaSubscriptionConfigured) {
       reasons.push('WABA_SUBSCRIPTION_NOT_CONFIGURED');
     }
