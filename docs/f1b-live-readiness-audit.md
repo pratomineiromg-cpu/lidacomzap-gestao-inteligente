@@ -525,3 +525,26 @@ META SECURITY FOUNDATION: OFFLINE IMPLEMENTED.
 META LIVE STATUS: NOT_READY. Current protocol reconfirmation, real secret
 provisioning, HTTPS/TLS, WABA subscription, production durable store, transport,
 server persistence, runtime observability and deployment hardening remain.
+
+## Addendum — F1B-10 Batch Webhook Ingress + Durable Admission & ACK Semantics Offline
+
+F1B-10 evolves the Meta webhook boundary to a batch-first, admission-first offline model.
+The authenticated POST request is decoded once into independent items. Valid items enter a
+conceptual atomic `InboundAdmissionStore` boundary where dedupe/admission state and queued
+work become visible together. Contact identity and Conversation resolution are no longer
+part of the pre-ACK HTTP path; they execute only in the downstream reference worker.
+
+- **Batch-first decode**: all supported `entry[]`, `changes[]`, `messages[]`, and `statuses[]` candidates are traversed without a single-event-first fallback.
+- **Item isolation**: valid, duplicate, unsupported, final-rejected, already-processing, and retryable-admission outcomes are represented independently.
+- **Atomic admission semantics**: a new event cannot become a successful dedupe/completed marker before its work item exists. Crash-before-commit allows replay admission; crash-after-commit/response-loss dedupes safely.
+- **Inbound work queue**: provider-neutral reference operations cover enqueue, reserve, ack, nack, failFinal, get/list with lease/retry state, using the existing mathematical retry policy.
+- **ACK policy separation**: `ACKNOWLEDGE`, `RETRY_REQUEST`, and `REJECT_REQUEST` are LOCAL PROCESSING POLICY. HTTP mapping is a separate function and HTTP status is not persisted as admission state.
+- **Current Meta semantics remain unverified**: `META_ACK_RETRY_SEMANTICS_CURRENT_RECONFIRMATION_REQUIRED` remains a live blocker; local HTTP behavior must not be described as current provider retry fact.
+- **Local limits/privacy**: `maxDecodedItemsPerRequest` is a local safety limit. Raw payloads, customer/provider addresses, message content, signatures, and secret values stay outside audits/metrics/idempotency errors/provider-facing response bodies.
+
+THIS PHASE DOES NOT CONNECT WHATSAPP.
+
+BATCH INGRESS & ATOMIC ADMISSION FOUNDATION: OFFLINE IMPLEMENTED AFTER AUDIT HARDENING.
+META LIVE STATUS: NOT_READY. Production durable admission/work queue, current Meta protocol
+and ACK/retry reconfirmation, real secrets, WABA configuration, HTTPS/TLS runtime, worker
+runtime, observability, deployment hardening, and controlled live approval remain blockers.

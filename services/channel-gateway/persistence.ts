@@ -1,4 +1,5 @@
 import type { DurableIdempotencyStore } from './idempotency';
+import type { InboundAdmissionStore, InboundWorkQueue } from './ingress';
 import type { OutboundQueue } from './outboundQueue';
 import type { ContactIdentityResolver, ConversationResolver } from './resolution';
 
@@ -8,4 +9,8 @@ export interface ChannelGatewayPersistencePorts {
   contactIdentities: ContactIdentityResolver;
   conversations: ConversationResolver;
   outboundQueue: OutboundQueue;
+  /** Absent means production inbound durable admission is NOT_CONFIGURED. */
+  inboundAdmission?: InboundAdmissionStore;
+  /** Absent means production inbound worker queue is NOT_CONFIGURED. */
+  inboundWorkQueue?: InboundWorkQueue;
 }

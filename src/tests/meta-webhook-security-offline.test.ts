@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InjectedHmacDigestVerifier } from '../../services/channel-gateway/crypto';
 import { evaluateProviderLiveReadiness } from '../../services/channel-gateway/operability';
-import { WhatsAppMetaOfficialWebhookDecoder } from '../../services/channel-gateway/providers/metaOfficialProtocol';
+import { MetaOfficialBatchWebhookDecoder } from '../../services/channel-gateway/providers/metaOfficialProtocol';
 import { handleMetaWebhookRequest } from '../../services/channel-gateway/providers/metaWebhookHandler';
 import { META_SECURITY_EVIDENCE, MetaWebhookAuthenticator } from '../../services/channel-gateway/providers/metaWebhookSecurity';
 import { createLiveWebhookRequest, type CreateLiveWebhookRequestInput } from '../../services/channel-gateway/rawWebhook';
@@ -43,7 +43,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   it('rejects a wrong resolved secret before decode', () => {
     const dependencies = syntheticMetaDependencies();
     dependencies.secretResolver = { resolve: () => ({ status: 'RESOLVED', bytes: new TextEncoder().encode('SYNTHETIC_WRONG_SECRET') }) };
-    const decoder = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decoder = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     expect(handleMetaWebhookRequest(post(), dependencies).audit.at(-1)?.reason).toBe('SIGNATURE_MISMATCH');
     expect(decoder).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
     ['mutated', `sha256=${'00'.repeat(32)}`, 'SIGNATURE_MISMATCH']
   ])('fails closed for %s signature without decoding or idempotency', (_name, signature, reason) => {
     const dependencies = syntheticMetaDependencies();
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     const acquire = vi.spyOn(dependencies.idempotencyStore, 'tryAcquire');
     const resolve = vi.spyOn(dependencies.contactIdentityResolver, 'resolve');
     const response = handleMetaWebhookRequest(post({
@@ -97,7 +97,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   });
 
   it('keeps missing, unconfigured, empty and failing secret resolution fail-closed', () => {
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     for (const resolver of [undefined, new UnconfiguredSecretResolver(),
       { resolve: () => ({ status: 'RESOLVED' as const, bytes: new Uint8Array() }) },
       { resolve: () => { throw new Error('SYNTHETIC_SENSITIVE_ERROR'); } }]) {
@@ -130,7 +130,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   });
 
   it('returns only the verified challenge and never decodes GET body', () => {
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     const dependencies = syntheticMetaDependencies();
     dependencies.config.maxWebhookBodyBytes = 1;
     const acquire = vi.spyOn(dependencies.idempotencyStore, 'tryAcquire');
@@ -182,44 +182,48 @@ describe('F1B-09 archived Meta security protocol offline', () => {
     expect(handleMetaWebhookRequest(post(), dependencies).audit.at(-1)?.reason).toBe('SECURITY_POLICY_NOT_CONFIGURED');
   });
 
-  it('executes signature, decoder, acquisition, identity and conversation in order; replay skips resolution', () => {
+  it('executes signature then batch decode/admission; replay never performs pre-ACK identity resolution', () => {
     const order: string[] = [];
     const dependencies = syntheticMetaDependencies();
     const auth = MetaWebhookAuthenticator.prototype.verify;
     vi.spyOn(MetaWebhookAuthenticator.prototype, 'verify').mockImplementation(function (request) {
       order.push('auth'); return auth.call(this, request);
     });
-    const decoder = WhatsAppMetaOfficialWebhookDecoder.prototype.decode;
-    vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode').mockImplementation(function (request, context) {
+    const decoder = MetaOfficialBatchWebhookDecoder.prototype.decodeBatch;
+    vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch').mockImplementation(function (request, context) {
       order.push('decode'); return decoder.call(this, request, context);
     });
-    const acquire = dependencies.idempotencyStore.tryAcquire.bind(dependencies.idempotencyStore);
-    vi.spyOn(dependencies.idempotencyStore, 'tryAcquire').mockImplementation((input) => { order.push('acquire'); return acquire(input); });
-    vi.spyOn(dependencies.contactIdentityResolver, 'resolve').mockImplementation(() => {
-      order.push('identity'); return { status: 'RESOLVED_EXISTING', contactId: 'synthetic-c', contactIdentityId: 'synthetic-i' };
-    });
-    vi.spyOn(dependencies.conversationResolver, 'resolve').mockImplementation(() => {
-      order.push('conversation'); return { status: 'RESOLVED_EXISTING', conversationId: 'synthetic-v' };
-    });
+    const acquire = vi.spyOn(dependencies.idempotencyStore, 'tryAcquire');
+    const identity = vi.spyOn(dependencies.contactIdentityResolver, 'resolve');
+    const conversation = vi.spyOn(dependencies.conversationResolver, 'resolve');
+
     expect(handleMetaWebhookRequest(post(), dependencies).processingResult?.outcome).toBe('ACCEPTED');
-    expect(order).toEqual(['auth', 'decode', 'acquire', 'identity', 'conversation']);
+    expect(order).toEqual(['auth', 'decode']);
+    expect(acquire).not.toHaveBeenCalled();
+    expect(identity).not.toHaveBeenCalled();
+    expect(conversation).not.toHaveBeenCalled();
+
     order.length = 0;
     const replay = handleMetaWebhookRequest(post(), dependencies);
     expect(replay.processingResult?.outcome).toBe('DUPLICATE');
     expect(replay.processingResult).not.toHaveProperty('command');
-    expect(order).toEqual(['auth', 'decode', 'acquire']);
+    expect(order).toEqual(['auth', 'decode']);
+    expect(identity).not.toHaveBeenCalled();
+    expect(conversation).not.toHaveBeenCalled();
     expect(replay.audit.at(-1)?.duplicate).toBe(true);
     expect(replay.statusCode).toBe(200);
   });
 
-  it('does not mark failed identity resolution as completed or a successful replay', () => {
+  it('keeps identity resolution outside the authenticated HTTP admission path', () => {
     const dependencies = syntheticMetaDependencies();
-    const resolve = vi.spyOn(dependencies.contactIdentityResolver, 'resolve').mockReturnValueOnce({ status: 'NOT_FOUND' });
-    const failed = handleMetaWebhookRequest(post(), dependencies);
-    expect(failed.statusCode).toBe(503);
-    expect(failed.processingResult?.outcome).toBe('REJECTED');
-    expect(handleMetaWebhookRequest(post(), dependencies).processingResult?.outcome).toBe('ACCEPTED');
-    expect(resolve).toHaveBeenCalledTimes(2);
+    const resolve = vi.spyOn(dependencies.contactIdentityResolver, 'resolve').mockImplementation(() => {
+      throw new Error('SYNTHETIC_DOWNSTREAM_ONLY_FAILURE');
+    });
+    const response = handleMetaWebhookRequest(post(), dependencies);
+    expect(response.statusCode).toBe(200);
+    expect(response.ackDecision).toBe('ACKNOWLEDGE');
+    expect(response.processingResult?.outcome).toBe('ACCEPTED');
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -230,7 +234,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
     const bytes = typeof raw === 'string' ? new TextEncoder().encode(raw) : raw;
     const dependencies = syntheticMetaDependencies();
     const acquire = vi.spyOn(dependencies.idempotencyStore, 'tryAcquire');
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     const response = handleMetaWebhookRequest(post({ rawBody: bytes,
       headers: { 'content-type': 'application/json', 'x-hub-signature-256': signSyntheticBody(bytes) } }), dependencies);
     expect(response.statusCode).toBe(400);
@@ -243,7 +247,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   it('rejects unsupported methods before any secret, decoder, or store operation', () => {
     const dependencies = syntheticMetaDependencies();
     const resolve = vi.spyOn(dependencies.secretResolver!, 'resolve');
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     for (const method of ['PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', 'TRACE', 'UNTRUSTED_METHOD_CONTENT']) {
       const response = handleMetaWebhookRequest(post({ method }), dependencies);
       expect(response).toMatchObject({ statusCode: 405, headers: { allow: 'GET, POST' } });
@@ -257,7 +261,7 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   it('enforces byte-size boundary before content, auth or parse and accepts the exact maximum', () => {
     const dependencies = syntheticMetaDependencies();
     const resolve = vi.spyOn(dependencies.secretResolver!, 'resolve');
-    const decode = vi.spyOn(WhatsAppMetaOfficialWebhookDecoder.prototype, 'decode');
+    const decode = vi.spyOn(MetaOfficialBatchWebhookDecoder.prototype, 'decodeBatch');
     dependencies.config.maxWebhookBodyBytes = body.byteLength - 1;
     expect(handleMetaWebhookRequest(post({ headers: {} }), dependencies).audit.at(-1)?.reason).toBe('PAYLOAD_TOO_LARGE');
     expect(resolve).not.toHaveBeenCalled();

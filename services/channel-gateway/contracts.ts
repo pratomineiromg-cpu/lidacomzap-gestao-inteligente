@@ -160,3 +160,38 @@ export type GatewayProcessResult =
       outcome: 'REJECTED';
       audit: GatewayAuditEvent;
     };
+
+export interface SourceCoordinates {
+  entryIndex: number;
+  changeIndex: number;
+  itemIndex: number;
+}
+
+export interface DecodedProviderBatchItem {
+  itemId: string;
+  providerEventId?: string;
+  providerMessageId?: string;
+  rawEventKind: 'message' | 'status' | 'unsupported_event';
+  sourceCoordinates?: SourceCoordinates;
+  event?: NormalizedChannelEvent;
+  providerTimestamp?: string;
+  errorReason?: GatewayErrorCode | string;
+}
+
+export interface DecodedProviderBatch {
+  requestId: string;
+  provider: ChannelProvider;
+  channel: CommunicationChannel;
+  batchId: string;
+  receivedAt: Date;
+  decodedAt: Date;
+  items: readonly DecodedProviderBatchItem[];
+}
+
+export interface ProviderBatchDecoder {
+  readonly provider: ChannelProvider;
+  decodeBatch(
+    rawRequest: unknown,
+    context: GatewayNormalizationContext
+  ): DecodedProviderBatch;
+}
