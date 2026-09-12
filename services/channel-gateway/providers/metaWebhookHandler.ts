@@ -2,10 +2,14 @@ import type {
   DecodedProviderBatch,
   DecodedProviderBatchItem,
   GatewayCommand,
-  GatewayProcessResult,
-  NormalizedChannelEvent
+  GatewayProcessResult
 } from '../contracts';
+import { createGatewayCommand } from '../command';
 import type { DurableIdempotencyStore } from '../idempotency';
+import {
+  resolveInboundWorkReferences,
+  type InboundWorkReferenceResolvers
+} from '../inboundWorker';
 import {
   decideWebhookAck,
   type DurableIngressBatchRecord,
@@ -79,9 +83,7 @@ export interface MetaWebhookHttpResult {
   audit: readonly MetaWebhookAudit[];
 }
 
-export interface InboundWorkerDependencies {
-  contactIdentityResolver: ContactIdentityResolver;
-  conversationResolver: ConversationResolver;
+export interface InboundWorkerDependencies extends InboundWorkReferenceResolvers {
   ownerId: string;
   now: Date;
   leaseDurationMs: number;
@@ -98,25 +100,6 @@ function ingressStoreFor(dependencies: MetaWebhookRuntimeDependencies): DurableW
   const created = new InMemoryDurableWebhookIngressStore();
   offlineIngressStores.set(key, created);
   return created;
-}
-
-function commandFor(event: NormalizedChannelEvent): GatewayCommand {
-  switch (event.eventType) {
-    case 'INBOUND_MESSAGE':
-      return { type: 'InboundMessageReceived', event };
-    case 'OUTBOUND_MESSAGE_OBSERVED':
-      return { type: 'OutboundMessageObserved', event };
-    case 'DELIVERY_STATUS':
-      return { type: 'MessageDeliveryUpdated', event };
-    case 'READ_STATUS':
-      return { type: 'MessageReadUpdated', event };
-    case 'CAPABILITY_UPDATE':
-      return { type: 'ChannelCapabilityUpdated', event };
-    case 'SUBSCRIPTION_UPDATE':
-      return { type: 'ChannelSubscriptionUpdated', event };
-    case 'PROVIDER_STATUS':
-      return { type: 'ProviderStatusObserved', event };
-  }
 }
 
 function validConfig(config: MetaWebhookSecurityConfig): boolean {
@@ -165,7 +148,7 @@ function compatibilityProjection(
     return {
       outcome: 'ACCEPTED',
       event,
-      command: commandFor(event),
+      command: createGatewayCommand(event),
       audit: createSanitizedAuditEvent({
         event,
         internalEventId: event.internalEventId,
@@ -481,33 +464,6 @@ export interface DispatchedItemResult {
   reasonCode: string;
 }
 
-function resolveInboundReferences(event: NormalizedChannelEvent, dependencies: InboundWorkerDependencies): void {
-  if (event.eventType !== 'INBOUND_MESSAGE') return;
-  const externalAddress = event.payload.providerAddress;
-  if (!externalAddress) throw new GatewayError('IDENTITY_REJECTED');
-  const identity = dependencies.contactIdentityResolver.resolve({
-    provider: event.provider,
-    channel: event.channel,
-    externalAddress
-  });
-  if (identity.status !== 'RESOLVED_EXISTING') {
-    if (identity.status === 'NOT_FOUND') throw new GatewayError('IDENTITY_NOT_FOUND');
-    if (identity.status === 'AMBIGUOUS') throw new GatewayError('IDENTITY_AMBIGUOUS');
-    throw new GatewayError('IDENTITY_REJECTED');
-  }
-  const conversation = dependencies.conversationResolver.resolve({
-    contactId: identity.contactId,
-    provider: event.provider,
-    channel: event.channel,
-    externalConversationId: event.payload.externalConversationId
-  });
-  if (conversation.status !== 'RESOLVED_EXISTING') {
-    if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
-    if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
-    throw new GatewayError('CONVERSATION_REJECTED');
-  }
-}
-
 /** Reference worker step. It runs only after HTTP admission/ACK decision has completed. */
 export function dispatchStagedBatchItems(
   batchRecord: DurableIngressBatchRecord,
@@ -532,8 +488,8 @@ export function dispatchStagedBatchItems(
       continue;
     }
     try {
-      resolveInboundReferences(reserved.record.event, dependencies);
-      const command = commandFor(reserved.record.event);
+      resolveInboundWorkReferences(reserved.record.event, dependencies);
+      const command = createGatewayCommand(reserved.record.event);
       ingressStore.ack(item.workItemId, dependencies.ownerId, dependencies.now);
       results.push({
         workItemId: item.workItemId,
