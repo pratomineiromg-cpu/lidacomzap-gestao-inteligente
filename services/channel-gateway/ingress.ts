@@ -124,9 +124,21 @@ export type InboundQueueReserveResult =
   | { status: 'RESERVED'; record: InboundWorkItem }
   | { status: 'NOT_AVAILABLE'; record?: InboundWorkItem };
 
+/**
+ * One atomic worker-claim attempt. A durable adapter must select and reserve
+ * the work item in the same persistence boundary; it must not expose a
+ * list-then-reserve race to its caller.
+ */
+export interface InboundQueueReserveNextInput {
+  ownerId: string;
+  now: Date;
+  leaseDurationMs: number;
+}
+
 export interface InboundWorkQueue {
   enqueue(item: InboundWorkItem): InboundQueueEnqueueResult;
   reserve(workItemId: string, ownerId: string, now: Date, leaseDurationMs: number): InboundQueueReserveResult;
+  reserveNext(input: InboundQueueReserveNextInput): InboundQueueReserveResult;
   ack(workItemId: string, ownerId: string, completedAt: Date): InboundWorkItem;
   nack(
     workItemId: string,
@@ -177,6 +189,23 @@ function copyWorkItem(record: InboundWorkItem): InboundWorkItem {
     leaseExpiresAt: record.leaseExpiresAt && new Date(record.leaseExpiresAt.getTime()),
     nextAttemptAt: record.nextAttemptAt && new Date(record.nextAttemptAt.getTime())
   };
+}
+
+function isReservableWorkItem(record: InboundWorkItem, now: Date): boolean {
+  if (record.state === 'QUEUED') return true;
+  if (record.state === 'RESERVED') {
+    return !record.leaseExpiresAt || record.leaseExpiresAt.getTime() <= now.getTime();
+  }
+  if (record.state === 'FAILED_RETRYABLE') {
+    return !record.nextAttemptAt || record.nextAttemptAt.getTime() <= now.getTime();
+  }
+  return false;
+}
+
+function availableAt(record: InboundWorkItem): number {
+  if (record.state === 'RESERVED') return record.leaseExpiresAt?.getTime() ?? record.enqueuedAt.getTime();
+  if (record.state === 'FAILED_RETRYABLE') return record.nextAttemptAt?.getTime() ?? record.enqueuedAt.getTime();
+  return record.enqueuedAt.getTime();
 }
 
 function copyBatchItem(item: WebhookBatchItemResult): WebhookBatchItemResult {
@@ -347,6 +376,31 @@ export class InMemoryDurableWebhookIngressStore implements DurableWebhookIngress
     };
     this.commitWorkAndAdmission(workItem, updatedAdmission);
     return { status: 'RESERVED', record: copyWorkItem(workItem) };
+  }
+
+  reserveNext(input: InboundQueueReserveNextInput): InboundQueueReserveResult {
+    if (
+      input.ownerId.trim().length === 0 ||
+      Number.isNaN(input.now.getTime()) ||
+      !Number.isFinite(input.leaseDurationMs) ||
+      input.leaseDurationMs <= 0
+    ) {
+      return { status: 'NOT_AVAILABLE' };
+    }
+
+    const candidate = Array.from(this.state.workItems.values())
+      .filter((record) => isReservableWorkItem(record, input.now))
+      .sort((left, right) => {
+        const availabilityDifference = availableAt(left) - availableAt(right);
+        if (availabilityDifference !== 0) return availabilityDifference;
+        const enqueueDifference = left.enqueuedAt.getTime() - right.enqueuedAt.getTime();
+        if (enqueueDifference !== 0) return enqueueDifference;
+        return left.workItemId.localeCompare(right.workItemId);
+      })[0];
+
+    return candidate
+      ? this.reserve(candidate.workItemId, input.ownerId, input.now, input.leaseDurationMs)
+      : { status: 'NOT_AVAILABLE' };
   }
 
   ack(workItemId: string, ownerId: string, completedAt: Date): InboundWorkItem {

@@ -1,4 +1,5 @@
-import type { ChannelGatewayAdapter, GatewayCommand, GatewayProcessResult, NormalizedChannelEvent } from './contracts';
+import { createGatewayCommand } from './command';
+import type { ChannelGatewayAdapter, GatewayProcessResult, NormalizedChannelEvent } from './contracts';
 import { GatewayError } from './errors';
 import type { DurableIdempotencyStore } from './idempotency';
 import { assertNormalizedEvent, createOpaqueGatewayId } from './normalization';
@@ -6,25 +7,6 @@ import type { ProviderRawDecoder, RawWebhookRequest } from './rawWebhook';
 import type { ContactIdentityResolver, ConversationResolver } from './resolution';
 import { createSanitizedAuditEvent } from './sanitizer';
 import type { WebhookAuthenticator } from './webhookAuth';
-
-function commandFor(event: NormalizedChannelEvent): GatewayCommand {
-  switch (event.eventType) {
-    case 'INBOUND_MESSAGE':
-      return { type: 'InboundMessageReceived', event };
-    case 'OUTBOUND_MESSAGE_OBSERVED':
-      return { type: 'OutboundMessageObserved', event };
-    case 'DELIVERY_STATUS':
-      return { type: 'MessageDeliveryUpdated', event };
-    case 'READ_STATUS':
-      return { type: 'MessageReadUpdated', event };
-    case 'CAPABILITY_UPDATE':
-      return { type: 'ChannelCapabilityUpdated', event };
-    case 'SUBSCRIPTION_UPDATE':
-      return { type: 'ChannelSubscriptionUpdated', event };
-    case 'PROVIDER_STATUS':
-      return { type: 'ProviderStatusObserved', event };
-  }
-}
 
 interface DurableProcessOptions {
   adapter: ChannelGatewayAdapter;
@@ -109,7 +91,7 @@ function processDurably(
     }
     acquiredKey = key;
     resolve?.(event);
-    const command = commandFor(event);
+    const command = createGatewayCommand(event);
     options.idempotencyStore.complete(key, options.ownerId, options.now);
     return {
       outcome: 'ACCEPTED',

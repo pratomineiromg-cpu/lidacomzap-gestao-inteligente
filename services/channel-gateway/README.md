@@ -45,3 +45,9 @@ F1B-08 adds a strict offline decoder for the verified official Meta webhook
 envelope and synthetic official fixtures. It still does not implement signature,
 challenge, subscription management, Graph API calls, transport, credentials, or
 provider connectivity.
+
+F1B-12 adds a provider-neutral, deterministic one-item inbound worker kernel.
+It atomically claims queued work, resolves only existing references, invokes an
+injected command handler, and acknowledges only after that handler succeeds. It
+does not start a worker process, schedule work, implement a database or CRM
+write, or connect a provider. See `docs/f1b-12-inbound-worker-kernel-offline.md`.
