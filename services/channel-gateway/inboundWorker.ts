@@ -2,7 +2,12 @@ import { createGatewayCommand } from './command';
 import { isGatewayErrorCode, type GatewayCommand, type GatewayErrorCode, type NormalizedChannelEvent } from './contracts';
 import { GatewayError } from './errors';
 import type { InboundWorkItem, InboundWorkQueue } from './ingress';
-import type { ContactIdentityResolver, ConversationResolver } from './resolution';
+import {
+  mayContinueAfterConversationResolution,
+  mayContinueAfterIdentityResolution,
+  type ContactIdentityResolver,
+  type ConversationResolver
+} from './resolution';
 import type { RetryPolicyInput } from './retryPolicy';
 
 export interface InboundWorkReferenceResolvers {
@@ -10,11 +15,21 @@ export interface InboundWorkReferenceResolvers {
   conversationResolver: ConversationResolver;
 }
 
-/** Existing references only; this boundary never creates a Contact or Conversation. */
+/** Opaque references only. A NEW_CONVERSATION is created by the injected resolver, never by the kernel. */
 export interface ResolvedInboundWorkReferences {
   contactId: string;
   contactIdentityId: string;
   conversationId: string;
+  conversationCreated?: true;
+}
+
+export type ReferenceResolutionOutcome =
+  | { status: 'RESOLVED'; references: ResolvedInboundWorkReferences | undefined }
+  | { status: 'RETRYABLE_FAILURE'; reasonCode: GatewayErrorCode }
+  | { status: 'FINAL_FAILURE'; reasonCode: GatewayErrorCode };
+
+export interface ReferenceResolutionContext {
+  creationIdempotencyKey?: string;
 }
 
 /**
@@ -23,40 +38,72 @@ export interface ResolvedInboundWorkReferences {
  */
 export function resolveInboundWorkReferences(
   event: NormalizedChannelEvent,
-  dependencies: InboundWorkReferenceResolvers
-): ResolvedInboundWorkReferences | undefined {
-  if (event.eventType !== 'INBOUND_MESSAGE') return undefined;
+  dependencies: InboundWorkReferenceResolvers,
+  context: ReferenceResolutionContext = {}
+): ReferenceResolutionOutcome {
+  if (event.eventType !== 'INBOUND_MESSAGE') {
+    return { status: 'RESOLVED', references: undefined };
+  }
 
   const externalAddress = event.payload.providerAddress;
-  if (!externalAddress) throw new GatewayError('IDENTITY_REJECTED');
+  if (!externalAddress) return { status: 'FINAL_FAILURE', reasonCode: 'IDENTITY_REJECTED' };
 
   const identity = dependencies.contactIdentityResolver.resolve({
     provider: event.provider,
     channel: event.channel,
     externalAddress
   });
-  if (identity.status !== 'RESOLVED_EXISTING') {
-    if (identity.status === 'NOT_FOUND') throw new GatewayError('IDENTITY_NOT_FOUND');
-    if (identity.status === 'AMBIGUOUS') throw new GatewayError('IDENTITY_AMBIGUOUS');
-    throw new GatewayError('IDENTITY_REJECTED');
+  if (!mayContinueAfterIdentityResolution(identity)) {
+    if (identity.status === 'NOT_FOUND') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: 'IDENTITY_NOT_FOUND' };
+    }
+    if (identity.status === 'AMBIGUOUS') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: 'IDENTITY_AMBIGUOUS' };
+    }
+    if (identity.status === 'RETRYABLE_FAILURE') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: identity.reasonCode };
+    }
+    if (identity.status === 'FINAL_FAILURE') {
+      return { status: 'FINAL_FAILURE', reasonCode: identity.reasonCode };
+    }
+    return { status: 'FINAL_FAILURE', reasonCode: 'IDENTITY_REJECTED' };
   }
 
   const conversation = dependencies.conversationResolver.resolve({
     contactId: identity.contactId,
     provider: event.provider,
     channel: event.channel,
-    externalConversationId: event.payload.externalConversationId
+    externalConversationId: event.payload.externalConversationId,
+    creationIdempotencyKey: context.creationIdempotencyKey
   });
-  if (conversation.status !== 'RESOLVED_EXISTING') {
-    if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
-    if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
-    throw new GatewayError('CONVERSATION_REJECTED');
+  if (!mayContinueAfterConversationResolution(conversation)) {
+    if (conversation.status === 'NOT_FOUND') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: 'CONVERSATION_NOT_FOUND' };
+    }
+    if (conversation.status === 'AMBIGUOUS') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: 'CONVERSATION_AMBIGUOUS' };
+    }
+    if (conversation.status === 'RETRYABLE_FAILURE') {
+      return { status: 'RETRYABLE_FAILURE', reasonCode: conversation.reasonCode };
+    }
+    if (conversation.status === 'FINAL_FAILURE') {
+      return { status: 'FINAL_FAILURE', reasonCode: conversation.reasonCode };
+    }
+    return { status: 'FINAL_FAILURE', reasonCode: 'CONVERSATION_REJECTED' };
+  }
+
+  if (conversation.status === 'NEW_CONVERSATION' && !context.creationIdempotencyKey) {
+    return { status: 'FINAL_FAILURE', reasonCode: 'CONVERSATION_REJECTED' };
   }
 
   return {
-    contactId: identity.contactId,
-    contactIdentityId: identity.contactIdentityId,
-    conversationId: conversation.conversationId
+    status: 'RESOLVED',
+    references: {
+      contactId: identity.contactId,
+      contactIdentityId: identity.contactIdentityId,
+      conversationId: conversation.conversationId,
+      ...(conversation.status === 'NEW_CONVERSATION' ? { conversationCreated: true as const } : {})
+    }
   };
 }
 
@@ -193,7 +240,16 @@ function processReservedWorkItem(
 ): InboundWorkerStepResult {
   let command: GatewayCommand;
   try {
-    const resolvedReferences = resolveInboundWorkReferences(workItem.event, input);
+    const resolution = resolveInboundWorkReferences(workItem.event, input, {
+      creationIdempotencyKey: workItem.idempotencyKey
+    });
+    if (resolution.status === 'RETRYABLE_FAILURE') {
+      return failureResult(workItem, input, resolution.reasonCode);
+    }
+    if (resolution.status === 'FINAL_FAILURE') {
+      return finalFailureResult(workItem, input, resolution.reasonCode);
+    }
+    const resolvedReferences = resolution.references;
     command = createGatewayCommand(workItem.event);
     const handling = input.commandHandler.handle({
       workItemId: workItem.workItemId,
