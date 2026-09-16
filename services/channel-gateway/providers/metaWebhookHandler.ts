@@ -488,7 +488,38 @@ export function dispatchStagedBatchItems(
       continue;
     }
     try {
-      resolveInboundWorkReferences(reserved.record.event, dependencies);
+      const resolution = resolveInboundWorkReferences(reserved.record.event, dependencies, {
+        creationIdempotencyKey: reserved.record.idempotencyKey
+      });
+      if (resolution.status === 'RETRYABLE_FAILURE') {
+        const work = ingressStore.nack(
+          item.workItemId,
+          dependencies.ownerId,
+          dependencies.now,
+          resolution.reasonCode,
+          dependencies.retryPolicy
+        );
+        results.push({
+          workItemId: item.workItemId,
+          status: work.state === 'FAILED_RETRYABLE' ? 'FAILED_RETRYABLE' : 'FAILED_FINAL',
+          reasonCode: resolution.reasonCode
+        });
+        continue;
+      }
+      if (resolution.status === 'FINAL_FAILURE') {
+        ingressStore.failFinal(
+          item.workItemId,
+          dependencies.ownerId,
+          dependencies.now,
+          resolution.reasonCode
+        );
+        results.push({
+          workItemId: item.workItemId,
+          status: 'FAILED_FINAL',
+          reasonCode: resolution.reasonCode
+        });
+        continue;
+      }
       const command = createGatewayCommand(reserved.record.event);
       ingressStore.ack(item.workItemId, dependencies.ownerId, dependencies.now);
       results.push({

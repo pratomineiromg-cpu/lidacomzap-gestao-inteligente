@@ -4,7 +4,12 @@ import { GatewayError } from './errors';
 import type { DurableIdempotencyStore } from './idempotency';
 import { assertNormalizedEvent, createOpaqueGatewayId } from './normalization';
 import type { ProviderRawDecoder, RawWebhookRequest } from './rawWebhook';
-import type { ContactIdentityResolver, ConversationResolver } from './resolution';
+import {
+  mayContinueAfterConversationResolution,
+  mayContinueAfterIdentityResolution,
+  type ContactIdentityResolver,
+  type ConversationResolver
+} from './resolution';
 import { createSanitizedAuditEvent } from './sanitizer';
 import type { WebhookAuthenticator } from './webhookAuth';
 
@@ -52,7 +57,7 @@ function rejectBeforeDecode(
 function processDurably(
   options: DurableProcessOptions,
   normalize: (context: { createInternalEventId: () => string }) => NormalizedChannelEvent,
-  resolve?: (event: NormalizedChannelEvent) => void
+  resolve?: (event: NormalizedChannelEvent, idempotencyKey: string) => void
 ): GatewayProcessResult {
   const createInternalEventId = options.createInternalEventId ?? (() => createOpaqueGatewayId('gateway-event'));
   let event: NormalizedChannelEvent | undefined;
@@ -90,7 +95,7 @@ function processDurably(
       throw new GatewayError('NON_RETRYABLE');
     }
     acquiredKey = key;
-    resolve?.(event);
+    resolve?.(event, key);
     const command = createGatewayCommand(event);
     options.idempotencyStore.complete(key, options.ownerId, options.now);
     return {
@@ -109,13 +114,14 @@ function processDurably(
       })
     };
   } catch (error) {
+    const code = error instanceof GatewayError ? error.code : 'INVALID_EVENT';
     if (acquiredKey) {
       // A resolution/storage failure must not become a successful duplicate ACK.
-      // Allow retry without holding the lease; no downstream work ran here.
-      try { options.idempotencyStore.fail(acquiredKey, options.ownerId, options.now, 'RETRYABLE'); }
+      // Preserve the explicit retryability selected by a resolver outcome.
+      const retryability = error instanceof GatewayError ? error.retryability : 'RETRYABLE';
+      try { options.idempotencyStore.fail(acquiredKey, options.ownerId, options.now, retryability); }
       catch { /* A storage failure remains a rejected request. */ }
     }
-    const code = error instanceof GatewayError ? error.code : 'INVALID_EVENT';
     return {
       outcome: 'REJECTED',
       audit: createSanitizedAuditEvent({
@@ -156,7 +162,7 @@ export function processLiveWebhookRequest(options: ProcessLiveWebhookOptions): G
   if (authentication.status !== 'VERIFIED') {
     return rejectBeforeDecode(options, 'WEBHOOK_AUTH_REJECTED');
   }
-  return processDurably(options, (context) => options.liveDecoder.decode(options.request, context), (event) => {
+  return processDurably(options, (context) => options.liveDecoder.decode(options.request, context), (event, key) => {
     if (event.eventType !== 'INBOUND_MESSAGE') return;
     const externalAddress = event.payload.providerAddress;
     if (!externalAddress) throw new GatewayError('IDENTITY_REJECTED');
@@ -165,17 +171,28 @@ export function processLiveWebhookRequest(options: ProcessLiveWebhookOptions): G
       channel: event.channel,
       externalAddress
     });
-    if (identity.status === 'NOT_FOUND') throw new GatewayError('IDENTITY_NOT_FOUND');
-    if (identity.status === 'AMBIGUOUS') throw new GatewayError('IDENTITY_AMBIGUOUS');
-    if (identity.status === 'REJECTED') throw new GatewayError('IDENTITY_REJECTED');
+    if (!mayContinueAfterIdentityResolution(identity)) {
+      if (identity.status === 'NOT_FOUND') throw new GatewayError('IDENTITY_NOT_FOUND');
+      if (identity.status === 'AMBIGUOUS') throw new GatewayError('IDENTITY_AMBIGUOUS');
+      if (identity.status === 'RETRYABLE_FAILURE' || identity.status === 'FINAL_FAILURE') {
+        throw new GatewayError(identity.reasonCode);
+      }
+      throw new GatewayError('IDENTITY_REJECTED');
+    }
     const conversation = options.conversationResolver.resolve({
       contactId: identity.contactId,
       provider: event.provider,
       channel: event.channel,
-      externalConversationId: event.payload.externalConversationId
+      externalConversationId: event.payload.externalConversationId,
+      creationIdempotencyKey: key
     });
-    if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
-    if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
-    if (conversation.status === 'REJECTED') throw new GatewayError('CONVERSATION_REJECTED');
+    if (!mayContinueAfterConversationResolution(conversation)) {
+      if (conversation.status === 'NOT_FOUND') throw new GatewayError('CONVERSATION_NOT_FOUND');
+      if (conversation.status === 'AMBIGUOUS') throw new GatewayError('CONVERSATION_AMBIGUOUS');
+      if (conversation.status === 'RETRYABLE_FAILURE' || conversation.status === 'FINAL_FAILURE') {
+        throw new GatewayError(conversation.reasonCode);
+      }
+      throw new GatewayError('CONVERSATION_REJECTED');
+    }
   });
 }
