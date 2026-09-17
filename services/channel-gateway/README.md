@@ -51,3 +51,9 @@ It atomically claims queued work, resolves only existing references, invokes an
 injected command handler, and acknowledges only after that handler succeeds. It
 does not start a worker process, schedule work, implement a database or CRM
 write, or connect a provider. See `docs/f1b-12-inbound-worker-kernel-offline.md`.
+
+F1B-14 adds a process-local idempotent implementation behind the command
+handler boundary and a safe operational-event sink. It models replay-safe
+downstream effects and emits payload-free stage outcomes without claiming
+distributed exactly-once delivery, durable persistence, hosted observability,
+or live readiness. See `docs/f1b-14-downstream-observability-offline.md`.
