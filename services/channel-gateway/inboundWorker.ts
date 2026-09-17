@@ -3,6 +3,13 @@ import { isGatewayErrorCode, type GatewayCommand, type GatewayErrorCode, type No
 import { GatewayError } from './errors';
 import type { InboundWorkItem, InboundWorkQueue } from './ingress';
 import {
+  createGatewayOperationalEvent,
+  emitGatewayOperationalEventSafely,
+  type GatewayOperationalEventSink,
+  type GatewayOperationalReasonCode,
+  type GatewayOperationalStage
+} from './operability';
+import {
   mayContinueAfterConversationResolution,
   mayContinueAfterIdentityResolution,
   type ContactIdentityResolver,
@@ -30,6 +37,22 @@ export type ReferenceResolutionOutcome =
 
 export interface ReferenceResolutionContext {
   creationIdempotencyKey?: string;
+  observe?: (event: {
+    stage: 'IDENTITY_RESOLUTION' | 'CONVERSATION_RESOLUTION';
+    outcome: 'SUCCESS' | 'FAILURE';
+    reasonCode: GatewayOperationalReasonCode;
+  }) => void;
+}
+
+function observeResolution(
+  context: ReferenceResolutionContext,
+  event: Parameters<NonNullable<ReferenceResolutionContext['observe']>>[0]
+): void {
+  try {
+    context.observe?.(event);
+  } catch {
+    // Resolution must not depend on a runtime observability exporter.
+  }
 }
 
 /**
@@ -46,7 +69,12 @@ export function resolveInboundWorkReferences(
   }
 
   const externalAddress = event.payload.providerAddress;
-  if (!externalAddress) return { status: 'FINAL_FAILURE', reasonCode: 'IDENTITY_REJECTED' };
+  if (!externalAddress) {
+    observeResolution(context, {
+      stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: 'IDENTITY_REJECTED'
+    });
+    return { status: 'FINAL_FAILURE', reasonCode: 'IDENTITY_REJECTED' };
+  }
 
   const identity = dependencies.contactIdentityResolver.resolve({
     provider: event.provider,
@@ -55,19 +83,37 @@ export function resolveInboundWorkReferences(
   });
   if (!mayContinueAfterIdentityResolution(identity)) {
     if (identity.status === 'NOT_FOUND') {
+      observeResolution(context, {
+        stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: 'IDENTITY_NOT_FOUND'
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: 'IDENTITY_NOT_FOUND' };
     }
     if (identity.status === 'AMBIGUOUS') {
+      observeResolution(context, {
+        stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: 'IDENTITY_AMBIGUOUS'
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: 'IDENTITY_AMBIGUOUS' };
     }
     if (identity.status === 'RETRYABLE_FAILURE') {
+      observeResolution(context, {
+        stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: identity.reasonCode
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: identity.reasonCode };
     }
     if (identity.status === 'FINAL_FAILURE') {
+      observeResolution(context, {
+        stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: identity.reasonCode
+      });
       return { status: 'FINAL_FAILURE', reasonCode: identity.reasonCode };
     }
+    observeResolution(context, {
+      stage: 'IDENTITY_RESOLUTION', outcome: 'FAILURE', reasonCode: 'IDENTITY_REJECTED'
+    });
     return { status: 'FINAL_FAILURE', reasonCode: 'IDENTITY_REJECTED' };
   }
+  observeResolution(context, {
+    stage: 'IDENTITY_RESOLUTION', outcome: 'SUCCESS', reasonCode: 'OPERATION_COMPLETED'
+  });
 
   const conversation = dependencies.conversationResolver.resolve({
     contactId: identity.contactId,
@@ -78,23 +124,44 @@ export function resolveInboundWorkReferences(
   });
   if (!mayContinueAfterConversationResolution(conversation)) {
     if (conversation.status === 'NOT_FOUND') {
+      observeResolution(context, {
+        stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: 'CONVERSATION_NOT_FOUND'
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: 'CONVERSATION_NOT_FOUND' };
     }
     if (conversation.status === 'AMBIGUOUS') {
+      observeResolution(context, {
+        stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: 'CONVERSATION_AMBIGUOUS'
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: 'CONVERSATION_AMBIGUOUS' };
     }
     if (conversation.status === 'RETRYABLE_FAILURE') {
+      observeResolution(context, {
+        stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: conversation.reasonCode
+      });
       return { status: 'RETRYABLE_FAILURE', reasonCode: conversation.reasonCode };
     }
     if (conversation.status === 'FINAL_FAILURE') {
+      observeResolution(context, {
+        stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: conversation.reasonCode
+      });
       return { status: 'FINAL_FAILURE', reasonCode: conversation.reasonCode };
     }
+    observeResolution(context, {
+      stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: 'CONVERSATION_REJECTED'
+    });
     return { status: 'FINAL_FAILURE', reasonCode: 'CONVERSATION_REJECTED' };
   }
 
   if (conversation.status === 'NEW_CONVERSATION' && !context.creationIdempotencyKey) {
+    observeResolution(context, {
+      stage: 'CONVERSATION_RESOLUTION', outcome: 'FAILURE', reasonCode: 'CONVERSATION_REJECTED'
+    });
     return { status: 'FINAL_FAILURE', reasonCode: 'CONVERSATION_REJECTED' };
   }
+  observeResolution(context, {
+    stage: 'CONVERSATION_RESOLUTION', outcome: 'SUCCESS', reasonCode: 'OPERATION_COMPLETED'
+  });
 
   return {
     status: 'RESOLVED',
@@ -136,6 +203,7 @@ export interface InboundWorkerStepInput extends InboundWorkReferenceResolvers {
   now: Date;
   leaseDurationMs: number;
   retryPolicy: Omit<RetryPolicyInput, 'attempt' | 'retryability'>;
+  operationalEventSink?: GatewayOperationalEventSink;
 }
 
 export type InboundWorkerStepStatus =
@@ -190,6 +258,31 @@ function validHandlerResult(result: unknown): result is InboundCommandHandlingRe
   );
 }
 
+function observeWorker(
+  workItem: InboundWorkItem,
+  input: InboundWorkerStepInput,
+  stage: GatewayOperationalStage,
+  outcome: 'SUCCESS' | 'FAILURE',
+  reasonCode: GatewayOperationalReasonCode,
+  options: { duplicate?: boolean; healthImpact?: 'NONE' | 'DEGRADED' | 'UNHEALTHY' } = {}
+): void {
+  emitGatewayOperationalEventSafely(
+    input.operationalEventSink,
+    createGatewayOperationalEvent({
+      provider: workItem.event.provider,
+      channel: workItem.event.channel,
+      stage,
+      outcome,
+      reasonCode,
+      retryCount: Math.max(0, workItem.attempt - 1),
+      duplicate: options.duplicate ?? false,
+      correlationId: workItem.workItemId,
+      timestamp: input.now.toISOString(),
+      ...(options.healthImpact ? { healthImpact: options.healthImpact } : {})
+    })
+  );
+}
+
 function failureResult(
   workItem: InboundWorkItem,
   input: InboundWorkerStepInput,
@@ -209,6 +302,9 @@ function failureResult(
       workItemId: workItem.workItemId
     };
   } catch {
+    observeWorker(workItem, input, 'QUEUE', 'FAILURE', 'STATE_TRANSITION_UNCONFIRMED', {
+      healthImpact: 'UNHEALTHY'
+    });
     return {
       status: 'STATE_TRANSITION_UNCONFIRMED',
       reasonCode: 'STATE_TRANSITION_UNCONFIRMED',
@@ -226,6 +322,9 @@ function finalFailureResult(
     input.queue.failFinal(workItem.workItemId, input.ownerId, input.now, reasonCode);
     return { status: 'FAILED_FINAL', reasonCode, workItemId: workItem.workItemId };
   } catch {
+    observeWorker(workItem, input, 'QUEUE', 'FAILURE', 'STATE_TRANSITION_UNCONFIRMED', {
+      healthImpact: 'UNHEALTHY'
+    });
     return {
       status: 'STATE_TRANSITION_UNCONFIRMED',
       reasonCode: 'STATE_TRANSITION_UNCONFIRMED',
@@ -241,7 +340,14 @@ function processReservedWorkItem(
   let command: GatewayCommand;
   try {
     const resolution = resolveInboundWorkReferences(workItem.event, input, {
-      creationIdempotencyKey: workItem.idempotencyKey
+      creationIdempotencyKey: workItem.idempotencyKey,
+      observe: (event) => observeWorker(
+        workItem,
+        input,
+        event.stage,
+        event.outcome,
+        event.reasonCode
+      )
     });
     if (resolution.status === 'RETRYABLE_FAILURE') {
       return failureResult(workItem, input, resolution.reasonCode);
@@ -261,21 +367,27 @@ function processReservedWorkItem(
     if (!validHandlerResult(handling)) throw new Error('INVALID_COMMAND_HANDLER_RESULT');
 
     if (handling.status === 'RETRYABLE_FAILURE') {
+      observeWorker(workItem, input, 'COMMAND_HANDLING', 'FAILURE', handling.reasonCode);
       return failureResult(workItem, input, handling.reasonCode);
     }
     if (handling.status === 'FINAL_FAILURE') {
+      observeWorker(workItem, input, 'COMMAND_HANDLING', 'FAILURE', handling.reasonCode);
       return finalFailureResult(workItem, input, handling.reasonCode);
     }
+    observeWorker(workItem, input, 'COMMAND_HANDLING', 'SUCCESS', 'OPERATION_COMPLETED');
   } catch (error) {
+    const reasonCode = error instanceof GatewayError ? error.code : 'COMMAND_HANDLER_FAILED';
+    observeWorker(workItem, input, 'COMMAND_HANDLING', 'FAILURE', reasonCode);
     return failureResult(
       workItem,
       input,
-      error instanceof GatewayError ? error.code : 'COMMAND_HANDLER_FAILED'
+      reasonCode
     );
   }
 
   try {
     input.queue.ack(workItem.workItemId, input.ownerId, input.now);
+    observeWorker(workItem, input, 'ACKNOWLEDGMENT', 'SUCCESS', 'EVENT_ACCEPTED');
     return {
       status: 'COMPLETED',
       reasonCode: 'EVENT_ACCEPTED',
@@ -285,6 +397,9 @@ function processReservedWorkItem(
   } catch {
     // A real adapter may be uncertain after a crash at the acknowledgement boundary.
     // The injected handler receives the idempotency key so it can tolerate replay.
+    observeWorker(workItem, input, 'ACKNOWLEDGMENT', 'FAILURE', 'ACKNOWLEDGMENT_UNCONFIRMED', {
+      healthImpact: 'UNHEALTHY'
+    });
     return {
       status: 'ACKNOWLEDGMENT_UNCONFIRMED',
       reasonCode: 'ACKNOWLEDGMENT_UNCONFIRMED',
@@ -308,5 +423,6 @@ export function dispatchNextInboundWorkItem(input: InboundWorkerStepInput): Inbo
   if (reserved.status !== 'RESERVED') {
     return { status: 'NOT_AVAILABLE', reasonCode: 'WORK_NOT_AVAILABLE' };
   }
+  observeWorker(reserved.record, input, 'QUEUE', 'SUCCESS', 'OPERATION_COMPLETED');
   return processReservedWorkItem(reserved.record, input);
 }

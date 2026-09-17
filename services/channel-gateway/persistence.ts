@@ -1,4 +1,5 @@
 import type { DurableIdempotencyStore } from './idempotency';
+import type { DownstreamExecutionJournal } from './downstream';
 import type { InboundAdmissionStore, InboundWorkQueue } from './ingress';
 import type { OutboundQueue } from './outboundQueue';
 import type { ContactIdentityResolver, ConversationResolver } from './resolution';
@@ -13,4 +14,6 @@ export interface ChannelGatewayPersistencePorts {
   inboundAdmission?: InboundAdmissionStore;
   /** Absent means production inbound worker queue is NOT_CONFIGURED. */
   inboundWorkQueue?: InboundWorkQueue;
+  /** Absent means production replay-safe downstream execution is NOT_CONFIGURED. */
+  downstreamExecutions?: DownstreamExecutionJournal;
 }

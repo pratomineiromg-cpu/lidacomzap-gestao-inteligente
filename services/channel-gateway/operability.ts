@@ -26,14 +26,27 @@ export type GatewayOperationalStage =
   | 'IDENTITY_RESOLUTION'
   | 'CONVERSATION_RESOLUTION'
   | 'QUEUE'
+  | 'DOWNSTREAM_IDEMPOTENCY'
+  | 'COMMAND_HANDLING'
+  | 'ACKNOWLEDGMENT'
   | 'TRANSPORT';
+
+export type GatewayOperationalReasonCode =
+  | GatewayErrorCode
+  | 'EVENT_ACCEPTED'
+  | 'OPERATION_COMPLETED'
+  | 'COMMAND_HANDLER_FAILED'
+  | 'ACKNOWLEDGMENT_UNCONFIRMED'
+  | 'STATE_TRANSITION_UNCONFIRMED'
+  | 'DOWNSTREAM_DUPLICATE'
+  | 'IDEMPOTENCY_CONFLICT';
 
 export interface GatewayMetricEvent {
   provider: ChannelProvider;
   channel: CommunicationChannel;
   stage: GatewayOperationalStage;
   outcome: 'SUCCESS' | 'FAILURE';
-  reasonCode: GatewayErrorCode | 'EVENT_ACCEPTED' | 'OPERATION_COMPLETED';
+  reasonCode: GatewayOperationalReasonCode;
   durationBucket: 'LT_10_MS' | 'LT_100_MS' | 'LT_1_S' | 'GTE_1_S';
   retryCount: number;
   duplicate: boolean;
@@ -43,6 +56,58 @@ export interface GatewayMetricEvent {
 
 export interface GatewayOperationalEvent extends Omit<GatewayMetricEvent, 'durationBucket'> {
   healthImpact: 'NONE' | 'DEGRADED' | 'UNHEALTHY';
+}
+
+export interface GatewayOperationalEventSink {
+  emit(event: GatewayOperationalEvent): void;
+}
+
+export class NoopGatewayOperationalEventSink implements GatewayOperationalEventSink {
+  emit(_event: GatewayOperationalEvent): void {}
+}
+
+/** Process-local test/reference collector. It stores only the safe event schema. */
+export class InMemoryGatewayOperationalEventSink implements GatewayOperationalEventSink {
+  private readonly events: GatewayOperationalEvent[] = [];
+
+  emit(event: GatewayOperationalEvent): void {
+    this.events.push({ ...event });
+  }
+
+  list(): readonly GatewayOperationalEvent[] {
+    return this.events.map((event) => ({ ...event }));
+  }
+}
+
+export function createGatewayOperationalEvent(
+  input: Omit<GatewayOperationalEvent, 'healthImpact'> & {
+    healthImpact?: GatewayOperationalEvent['healthImpact'];
+  }
+): GatewayOperationalEvent {
+  return {
+    provider: input.provider,
+    channel: input.channel,
+    stage: input.stage,
+    outcome: input.outcome,
+    reasonCode: input.reasonCode,
+    retryCount: input.retryCount,
+    duplicate: input.duplicate,
+    correlationId: input.correlationId,
+    timestamp: input.timestamp,
+    healthImpact: input.healthImpact ?? (input.outcome === 'SUCCESS' ? 'NONE' : 'DEGRADED')
+  };
+}
+
+/** Observability is best-effort and must never change business processing. */
+export function emitGatewayOperationalEventSafely(
+  sink: GatewayOperationalEventSink | undefined,
+  event: GatewayOperationalEvent
+): void {
+  try {
+    sink?.emit(event);
+  } catch {
+    // Runtime exporters are outside F1B-14; a failing sink cannot fail the worker.
+  }
 }
 
 export function createGatewayMetricEvent(
