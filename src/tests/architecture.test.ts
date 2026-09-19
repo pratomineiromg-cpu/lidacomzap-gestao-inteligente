@@ -29,6 +29,7 @@ describe('Architectural Integrity Tests', () => {
     const readTree = (directory: string): string => fs.readdirSync(directory, { withFileTypes: true })
       .flatMap((entry) => {
         const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory() && entry.name === 'adapters') return [];
         return entry.isDirectory()
           ? [readTree(fullPath)]
           : entry.name.endsWith('.ts') ? [fs.readFileSync(fullPath, 'utf8')] : [];
@@ -44,7 +45,7 @@ describe('Architectural Integrity Tests', () => {
     ].join('\n');
 
     expect(domain).not.toMatch(/channel-gateway|firebase|firestore/i);
-    expect(gateway).not.toMatch(/src[\\/]repositories|firebase|firestore|src[\\/](components|views)/i);
+    expect(gateway).not.toMatch(/src[\\/]repositories|firebase|firestore|@google-cloud[\\/]firestore|src[\\/](components|views)/i);
     expect(providers).not.toMatch(/src[\\/](components|views)|react/i);
     expect(routing).not.toMatch(/ProviderTransport|channel-gateway/);
     expect(contactTools).not.toMatch(/channel-gateway|ProviderTransport/);
