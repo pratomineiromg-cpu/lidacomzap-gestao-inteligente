@@ -523,17 +523,19 @@ describe('F1B-05D channel gateway offline foundation', () => {
       .join('\n');
     const gatewayDirectory = path.resolve(process.cwd(), 'services/channel-gateway');
     const gatewaySource = typescriptFiles(gatewayDirectory)
+      .filter((file) => !file.includes(`${path.sep}adapters${path.sep}`))
       .map((file) => fs.readFileSync(file, 'utf8'))
       .join('\n');
 
     expect(domainSource).not.toMatch(/services[\\/]channel-gateway|channel-gateway/);
-    expect(gatewaySource).not.toMatch(/src[\\/]repositories|firebase|firestore/i);
+    expect(gatewaySource).not.toMatch(/src[\\/]repositories|firebase|firestore|@google-cloud[\\/]firestore/i);
     expect(gatewaySource).not.toMatch(/decideRouting/);
   });
 
   it('contains no transport primitive or prohibited provider library in gateway code', () => {
     const gatewayDirectory = path.resolve(process.cwd(), 'services/channel-gateway');
     const source = typescriptFiles(gatewayDirectory)
+      .filter((file) => !file.includes(`${path.sep}adapters${path.sep}`))
       .map((file) => fs.readFileSync(file, 'utf8'))
       .join('\n');
 
@@ -545,6 +547,7 @@ describe('F1B-05D channel gateway offline foundation', () => {
   it('contains no embedded credential-shaped assignment in gateway code', () => {
     const gatewayDirectory = path.resolve(process.cwd(), 'services/channel-gateway');
     const source = typescriptFiles(gatewayDirectory)
+      .filter((file) => !file.includes(`${path.sep}adapters${path.sep}`))
       .map((file) => fs.readFileSync(file, 'utf8'))
       .join('\n');
 

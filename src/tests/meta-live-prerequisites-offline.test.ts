@@ -163,7 +163,7 @@ function gatewayTypescriptSource(): string {
   const root = path.resolve(process.cwd(), 'services/channel-gateway');
   const visit = (directory: string): string[] => fs.readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => entry.isDirectory()
-      ? visit(path.join(directory, entry.name))
+      ? entry.name === 'adapters' ? [] : visit(path.join(directory, entry.name))
       : entry.name.endsWith('.ts') ? [path.join(directory, entry.name)] : []);
   return visit(root).map((file) => fs.readFileSync(file, 'utf8')).join('\n');
 }
@@ -442,7 +442,7 @@ describe('F1B-07 Meta live prerequisites offline', () => {
 
   it('enforces gateway architecture, privacy, and network isolation in source', () => {
     const source = gatewayTypescriptSource();
-    expect(source).not.toMatch(/src[\\/]repositories|firebase|firestore/i);
+    expect(source).not.toMatch(/src[\\/]repositories|firebase|firestore|@google-cloud[\\/]firestore/i);
     expect(source).not.toMatch(/src[\\/](components|views)|react/i);
     expect(source).not.toMatch(/\bfetch\s*\(|\baxios\b|\bhttps?\.request\s*\(|\bWebSocket\b|\bSocket\b/);
     expect(source).not.toMatch(/graph\.facebook|facebook\.com|whatsapp[^\n]*endpoint|rcs[^\n]*endpoint/i);

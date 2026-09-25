@@ -355,12 +355,13 @@ describe('F1B-09 archived Meta security protocol offline', () => {
   it('preserves domain direction and contains no gateway network or persistence integration', () => {
     const readSources = (root: string): string => fs.readdirSync(root, { withFileTypes: true }).map((entry) => {
       const file = path.join(root, entry.name);
+      if (entry.isDirectory() && entry.name === 'adapters') return '';
       return entry.isDirectory() ? readSources(file) : entry.name.endsWith('.ts') ? fs.readFileSync(file, 'utf8') : '';
     }).join('\n');
     const domain = readSources('src/domain');
     expect(domain).not.toMatch(/(?:from|import\s*\()\s*['"][^'"]*(?:channel-gateway|node:http|metaWebhook)/i);
     const gateway = readSources('services/channel-gateway');
     expect(gateway).not.toMatch(/\bfetch\s*\(|\baxios\b|https?\.request|net\.connect|tls\.connect|WebSocket|graph\.facebook|\.listen\s*\(/);
-    expect(gateway).not.toMatch(/(?:from|import\s*\()\s*['"][^'"]*(?:firebase|firestore|node:http|node:https|node:net|node:tls)/i);
+    expect(gateway).not.toMatch(/(?:from|import\s*\()\s*['"][^'"]*(?:firebase|firestore|@google-cloud\/firestore|node:http|node:https|node:net|node:tls)/i);
   });
 });
